@@ -80,3 +80,34 @@ class EDMLoss:
         return loss
 
 #----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class MyLoss:
+    def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
+        self.P_mean = P_mean
+        self.P_std = P_std
+        self.sigma_data = sigma_data
+        self.lambda_max = torch.tensor(-3.30778)
+        self.weight_lambda_max = ((torch.exp(-self.lambda_max) + self.sigma_data ** 2) /
+                                  (torch.exp(-self.lambda_max) * self.sigma_data) ** 2)
+        
+    def normal_pdf(self, x, mu=0, sigma=1):
+        return (1 / (sigma * (2 * torch.pi) ** 0.5)) * torch.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
+
+# argmax x = -3.30778
+    def __call__(self, net, images, labels=None, augment_pipe=None):
+        rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
+        sigma = (rnd_normal * self.P_std + self.P_mean).exp()
+        lambda_ = -sigma.log()
+        weight = torch.where(
+            lambda_ < self.lambda_max,
+            torch.exp(-self.lambda_max) * self.normal_pdf(self.lambda_max) / self.normal_pdf(lambda_),
+            (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
+        )
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        n = torch.randn_like(y) * sigma
+        D_yn = net(y + n, sigma, labels, augment_labels=augment_labels)
+        loss = weight * ((D_yn - y) ** 2)
+        return loss
+
+#----------------------------------------------------------------------------
