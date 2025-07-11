@@ -96,6 +96,7 @@ class MyLoss:
 
 # argmax x = -3.30778
     def __call__(self, net, images, labels=None, augment_pipe=None):
+        print('Using MyLoss')
         rnd_normal = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal * self.P_std + self.P_mean).exp()
         lambda_ = -sigma.log()
