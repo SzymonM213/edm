@@ -82,7 +82,7 @@ class EDMLoss:
 #----------------------------------------------------------------------------
 
 @persistence.persistent_class
-class MyLoss:
+class MonotonicEDMLoss:
     def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
         self.P_mean = P_mean
         self.P_std = P_std
