@@ -10,6 +10,7 @@
 
 import torch
 from torch_utils import persistence
+from typing import Callable
 
 #----------------------------------------------------------------------------
 # Loss function corresponding to the variance preserving (VP) formulation
@@ -115,4 +116,43 @@ class MonotonicEDMLoss:
         loss = weight * ((D_yn - y) ** 2)
         return loss
 
+#----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class ULoss:
+    def __init__(self, u: Callable[[torch.Tensor], torch.Tensor],
+                 alpha: Callable[[torch.Tensor], torch.Tensor],
+                 sigma: Callable[[torch.Tensor], torch.Tensor],
+                 t_min: float = 5e-3,
+                 t_max: float = 1 - 5e-3):
+        self.u = u
+        self.alpha = alpha
+        self.sigma = sigma
+        self.t_min = t_min
+        self.t_max = t_max
+
+    def __call__(self, net, images, labels=None, augment_pipe=None):
+        t = torch.rand([images.shape[0]], device=images.device) * (self.t_max - self.t_min) + self.t_min
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        eps = torch.randn_like(y) * self.sigma(t)
+        D_yn = net(y * self.alpha(t) + eps, t, labels, augment_labels=augment_labels)
+        loss = (D_yn - eps * self.u(t))**2
+        return loss
+#----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class ConstantULoss(ULoss):
+    def __init__(self):
+        alpha = lambda t: torch.cos(t * torch.pi / 2)
+        sigma = lambda t: torch.sin(t * torch.pi / 2)
+        t_min = 5e-3
+        t_max = 1 - 5e-3
+        
+        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5D2+*+log%5C%2840%29Divide%5Bcos%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%2Csin%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%5D%5C%2841%29
+        d_lambda = lambda t: -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
+
+        # constant u to prevent imaginary values
+        u = lambda _: torch.max(-d_lambda(t_min), -d_lambda(t_max)) + 1e-3
+
+        super().__init__(u, alpha, sigma, t_min, t_max)
 #----------------------------------------------------------------------------

@@ -671,3 +671,46 @@ class EDMPrecond(torch.nn.Module):
         return torch.as_tensor(sigma)
 
 #----------------------------------------------------------------------------
+
+class UPrecond(torch.nn.Module):
+    def __init__(self,
+        img_resolution,                     # Image resolution.
+        img_channels,                       # Number of color channels.
+        label_dim       = 0,                # Number of class labels, 0 = unconditional.
+        use_fp16        = False,            # Execute the underlying model at FP16 precision?
+        sigma_min       = 0,                # Minimum supported noise level.
+        sigma_max       = float('inf'),     # Maximum supported noise level.
+        sigma_data      = 0.5,              # Expected standard deviation of the training data.
+        model_type      = 'DhariwalUNet',   # Class name of the underlying model.
+        alpha           = lambda t: torch.cos(t * torch.pi / 2),
+        sigma           = lambda t: torch.sin(t * torch.pi / 2),
+        t_min           = 5e-3,
+        t_max           = 1 - 5e-3,
+        d_lambda        = lambda t: -torch.pi / (torch.cos(t * np.pi / 2) * torch.sin(t * np.pi / 2)),
+        **model_kwargs,                     # Keyword arguments for the underlying model.
+    ):
+        super().__init__()
+        self.img_resolution = img_resolution
+        self.img_channels = img_channels
+        self.label_dim = label_dim
+        self.use_fp16 = use_fp16
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        self.sigma_data = sigma_data
+        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
+
+        self.alpha = alpha
+        self.sigma = sigma
+        self.t_min = t_min
+        self.t_max = t_max
+        self.u = lambda _: torch.max(-d_lambda(t_min), -d_lambda(t_max)) + 1e-3
+
+    def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
+        x = x.to(torch.float32)
+        sigma = self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
+        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
+        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+
+        F_x = self.model(x.to(dtype), sigma, class_labels=class_labels, **model_kwargs)
+        assert F_x.dtype == dtype
+        return F_x
