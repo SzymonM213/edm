@@ -137,7 +137,7 @@ class ULoss:
         eps = torch.randn_like(y) * self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
         D_yn = net(y * self.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + eps, 
                    t, labels, augment_labels=augment_labels)
-        loss = (D_yn - eps * self.u(t))**2
+        loss = (D_yn - eps * self.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
         return loss
 #----------------------------------------------------------------------------
 
