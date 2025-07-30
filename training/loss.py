@@ -143,16 +143,25 @@ class ULoss:
 @persistence.persistent_class
 class ConstantULoss(ULoss):
     def __init__(self):
-        alpha = lambda t: torch.cos(t * torch.pi / 2)
-        sigma = lambda t: torch.sin(t * torch.pi / 2)
         t_min = 5e-3
         t_max = 1 - 5e-3
-        
-        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5D2+*+log%5C%2840%29Divide%5Bcos%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%2Csin%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%5D%5C%2841%29
-        d_lambda = lambda t: -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
 
         # constant u to prevent imaginary values
-        u = lambda _: torch.max(-d_lambda(t_min), -d_lambda(t_max)) + 1e-3
+        self.u_constant = max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
 
-        super().__init__(u, alpha, sigma, t_min, t_max)
+        super().__init__(self._u_func, self._alpha_func, self._sigma_func, t_min, t_max)
+
+    def _alpha_func(self, t):
+        return torch.cos(t * torch.pi / 2)
+    
+    def _sigma_func(self, t):
+        return torch.sin(t * torch.pi / 2)
+    
+    def _d_lambda(self, t):
+        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5D2+*+log%5C%2840%29Divide%5Bcos%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%2Csin%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%5D%5C%2841%29
+        return -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
+    
+    def _u_func(self, t):
+        # constant u to prevent imaginary values
+        return torch.full_like(t, self.u_constant)
 #----------------------------------------------------------------------------
