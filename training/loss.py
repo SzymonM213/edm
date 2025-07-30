@@ -143,8 +143,8 @@ class ULoss:
 @persistence.persistent_class
 class ConstantULoss(ULoss):
     def __init__(self):
-        t_min = 5e-3
-        t_max = 1 - 5e-3
+        t_min = torch.tensor(5e-3)
+        t_max = torch.tensor(1 - 5e-3)
 
         # constant u to prevent imaginary values
         self.u_constant = max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
