@@ -682,8 +682,8 @@ class UPrecond(torch.nn.Module):
         sigma_max       = float('inf'),     # Maximum supported noise level.
         sigma_data      = 0.5,              # Expected standard deviation of the training data.
         model_type      = 'DhariwalUNet',   # Class name of the underlying model.
-        t_min           = 5e-3,
-        t_max           = 1 - 5e-3,
+        t_min           = torch.tensor(5e-3),
+        t_max           = torch.tensor(1 - 5e-3),
         **model_kwargs,                     # Keyword arguments for the underlying model.
     ):
         super().__init__()
@@ -698,7 +698,7 @@ class UPrecond(torch.nn.Module):
 
         self.t_min = t_min
         self.t_max = t_max
-        self.u_constant = max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
+        self.u_constant = torch.max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
 
     def _alpha(self, t):
         return torch.cos(t * torch.pi / 2)
