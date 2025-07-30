@@ -682,11 +682,8 @@ class UPrecond(torch.nn.Module):
         sigma_max       = float('inf'),     # Maximum supported noise level.
         sigma_data      = 0.5,              # Expected standard deviation of the training data.
         model_type      = 'DhariwalUNet',   # Class name of the underlying model.
-        alpha           = lambda t: torch.cos(t * torch.pi / 2),
-        sigma           = lambda t: torch.sin(t * torch.pi / 2),
         t_min           = 5e-3,
         t_max           = 1 - 5e-3,
-        d_lambda        = lambda t: -torch.pi / (torch.cos(t * np.pi / 2) * torch.sin(t * np.pi / 2)),
         **model_kwargs,                     # Keyword arguments for the underlying model.
     ):
         super().__init__()
@@ -699,15 +696,25 @@ class UPrecond(torch.nn.Module):
         self.sigma_data = sigma_data
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
-        self.alpha = alpha
-        self.sigma = sigma
         self.t_min = t_min
         self.t_max = t_max
-        self.u = lambda _: torch.max(-d_lambda(t_min), -d_lambda(t_max)) + 1e-3
+        self.u_constant = max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
+
+    def _alpha(self, t):
+        return torch.cos(t * torch.pi / 2)
+    
+    def _sigma(self, t):
+        return torch.sin(t * torch.pi / 2)
+    
+    def _d_lambda(self, t):
+        return -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
+    
+    def _u(self, t):
+        return torch.full_like(t, self.u_constant)
 
     def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
-        sigma = self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
+        sigma = self._sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
 
