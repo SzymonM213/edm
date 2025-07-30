@@ -135,7 +135,8 @@ class ULoss:
         t = torch.rand([images.shape[0]], device=images.device) * (self.t_max - self.t_min) + self.t_min
         y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
         eps = torch.randn_like(y) * self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
-        D_yn = net(y * self.alpha(t) + eps, t, labels, augment_labels=augment_labels)
+        D_yn = net(y * self.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + eps, 
+                   t, labels, augment_labels=augment_labels)
         loss = (D_yn - eps * self.u(t))**2
         return loss
 #----------------------------------------------------------------------------
