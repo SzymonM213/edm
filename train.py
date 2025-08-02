@@ -139,7 +139,7 @@ def main(**kwargs):
     else:
         assert opts.precond == 'uloss'
         c.network_kwargs.class_name = 'training.networks.UPrecond'
-        c.loss_kwargs.class_name = 'training.loss.ConstantULoss'
+        c.loss_kwargs.class_name = 'training.loss.ULoss'
     # Network options.
     if opts.cbase is not None:
         c.network_kwargs.model_channels = opts.cbase

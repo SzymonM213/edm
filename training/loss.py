@@ -120,50 +120,14 @@ class MonotonicEDMLoss:
 
 @persistence.persistent_class
 class ULoss:
-    def __init__(self, u: Callable[[torch.Tensor], torch.Tensor],
-                 alpha: Callable[[torch.Tensor], torch.Tensor],
-                 sigma: Callable[[torch.Tensor], torch.Tensor],
-                 t_min: float = 5e-3,
-                 t_max: float = 1 - 5e-3):
-        self.u = u
-        self.alpha = alpha
-        self.sigma = sigma
-        self.t_min = t_min
-        self.t_max = t_max
-
     def __call__(self, net, images, labels=None, augment_pipe=None):
-        t = torch.rand([images.shape[0]], device=images.device) * (self.t_max - self.t_min) + self.t_min
+        t = torch.rand([images.shape[0]], device=images.device) * (net.t_max - net.t_min) + net.t_min
         y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
         eps = torch.randn_like(y)
-        D_yn = net(y * self.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + 
-                   eps * self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1), 
+        D_yn = net(y * net.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + 
+                   eps * net.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1), 
                    t, labels, augment_labels=augment_labels)
-        loss = (D_yn - eps * self.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        loss = (D_yn - eps * net.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
         return loss
-#----------------------------------------------------------------------------
 
-@persistence.persistent_class
-class ConstantULoss(ULoss):
-    def __init__(self):
-        t_min = torch.tensor(5e-3)
-        t_max = torch.tensor(1 - 5e-3)
-
-        # constant u to prevent imaginary values
-        self.u_constant = max(-self._d_lambda(t_min), -self._d_lambda(t_max)) + 1e-3
-
-        super().__init__(self._u_func, self._alpha_func, self._sigma_func, t_min, t_max)
-
-    def _alpha_func(self, t):
-        return torch.cos(t * torch.pi / 2)
-    
-    def _sigma_func(self, t):
-        return torch.sin(t * torch.pi / 2)
-    
-    def _d_lambda(self, t):
-        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5D2+*+log%5C%2840%29Divide%5Bcos%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%2Csin%5C%2840%29t*Divide%5Bpi%2C2%5D%5C%2841%29%5D%5C%2841%29
-        return -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
-    
-    def _u_func(self, t):
-        # constant u to prevent imaginary values
-        return torch.full_like(t, self.u_constant)
 #----------------------------------------------------------------------------
