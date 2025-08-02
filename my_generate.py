@@ -74,7 +74,7 @@ def sample_images_from_model(
         eta_s = eta_continous(net, s)
 
         eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_scaled / net.u_constant.reshape(-1, 1, 1, 1)
+        eps_pred = eps_pred = eps_scaled / net.u_constant.to(device).reshape(-1, 1, 1, 1)
 
         coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
         coeff_z = alpha_s / alpha_t
@@ -83,7 +83,7 @@ def sample_images_from_model(
 
         z_t = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z_t + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
     
-    save_image_grid(z_t, output_path, gridw, gridh)
+    save_image_grid(z_t, dest_path, gridw, gridh)
 
 def save_image_grid(images, path, gridw, gridh):
     images = (images * 127.5 + 128).clamp(0, 255).to(torch.uint8)
