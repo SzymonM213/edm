@@ -8,7 +8,7 @@ import PIL.Image
 import dnnlib
 import os
 
-# eta = 1 
+# eta = 1
 @torch.no_grad()
 def without_normalization(net, num_steps, ts, z_t, class_labels) :
     for i in tqdm.trange(num_steps, desc="Sampling"):
@@ -20,7 +20,7 @@ def without_normalization(net, num_steps, ts, z_t, class_labels) :
         alpha_s = net._alpha(s)
         sigma_s = net._sigma(s)
 
-        gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
+        # gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
         # eta_s = torch.sqrt(1 - 1 / gamma_s)
         eta_s = torch.zeros_like(t)
 
@@ -129,8 +129,7 @@ def sample_images_from_model(
     t_min = torch.tensor(5e-3)
     t_max = torch.tensor(1 - 5e-3)
 
-    # JESZCZE NIE WIEM KTÓRY TO JELEŃ, SZUKAM JESZCZE 
-    class_index = 3
+    class_index = 4
     batch_size = gridw * gridh
     torch.manual_seed(seed)
 
@@ -138,40 +137,27 @@ def sample_images_from_model(
     with dnnlib.util.open_url(network_pkl) as f:
         net = pickle.load(f)['ema'].to(device)
 
-    #class_labels[:, :] = 0
-    #class_labels[:, class_idx] = 1
-
-    # chciałeś po bożemu, to masz 
     class_labels = torch.eye(net.label_dim, device=device)[torch.randint(net.label_dim, size=[batch_size], device=device)]
+
+    # jeżeli chcesz same jelenie to zostaw te linijki, jeżeli wszytsko to zakomentuj
+    class_labels[:, :] = 0
+    class_labels[:, class_index] = 1
 
     z_t = torch.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
     ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device)
 
+    # tu wybiera się etę
+    # 1. eta = 1
+    # 2. eta z pliku not_main.pdf
+    # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
     z_1 = normalization(net, num_steps, ts, z_t, class_labels) 
     # z_2 = without_normalization(net, num_steps, ts, z_t, class_labels) 
     # z_3 = continous(net, num_steps, ts, z_t, class_labels) 
 
-    save_image_grid(z_1, 'normalization.png', gridw, gridh)
+    # save_image_grid(z_1, 'normalization.png', gridw, gridh)
     # save_image_grid(z_2, 'without_normalization.png', gridw, gridh)
     # save_image_grid(z_3, 'continous.png', gridw, gridh)
 
-    # PYTANIE 
-    # Na końcu dostaję z_t_min czyli muszę z tego odczytać x_0. 
-    # Czyli powinien to obliczyć za pomoca z_t_min co nie ?
-
-    # t_final = ts[-1].unsqueeze(0)  
-
-    # alpha_final = net._alpha(t_final).reshape(-1,1,1,1)
-    # sigma_final = net._sigma(t_final).reshape(-1,1,1,1)
-
-    # print(f'Final timestep: alpha={alpha_final}, sigma={sigma_final}')
-
-    # eps_pred_final = net(z_t, t_final) / net.u_constant.reshape(-1,1,1,1)
-    # print(f'Finnal : { net(z_t, t_final)}')
-    # x_final = (z_t - sigma_final * eps_pred_final) / (alpha_final + 1e-8) 
-    # x_final = x_final.clamp(-1, 1)
-
-    # save_image_grid(x_final, dest_path, gridw, gridh)
 
 
 
@@ -192,7 +178,7 @@ def main():
         seed=2137,
         gridw=8,
         gridh=8,
-        num_steps=5,
+        num_steps=18,
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     )
 
