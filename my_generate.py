@@ -8,112 +8,23 @@ import PIL.Image
 import dnnlib
 import os
 
-# eta = 1
 @torch.no_grad()
-def without_normalization(net, num_steps, ts, z_t, class_labels) :
-    for i in tqdm.trange(num_steps, desc="Sampling"):
-        t = ts[i].unsqueeze(0)
-        s = ts[i + 1].unsqueeze(0)
+def eta_constant(t):
+    return torch.zeros_like(t)
 
-        alpha_t = net._alpha(t)
-        sigma_t = net._sigma(t)
-        alpha_s = net._alpha(s)
-        sigma_s = net._sigma(s)
-
-        # gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
-        # eta_s = torch.sqrt(1 - 1 / gamma_s)
-        eta_s = torch.zeros_like(t)
-
-        eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_scaled / net.u_constant.reshape(-1, 1, 1, 1)
-
-        coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
-        coeff_z = alpha_s / alpha_t
-
-        eps = torch.randn_like(z_t) if i < num_steps - 1 else 0
-
-        z_t = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z_t + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
-    return z_t
-
-# eta equals this formula at the botton of the_main.pdf
-@torch.no_grad()   
-def normalization(net, num_steps, ts, z_t, class_labels):
-    alpha_ts = net._alpha(ts)
-    sigma_ts = net._sigma(ts)
-
-    alpha_next = net._alpha(ts[1:])
-    sigma_next = net._sigma(ts[1:])
-
-    gamma_all = (alpha_next**2 / sigma_next**2) * (sigma_ts[:-1]**2 / alpha_ts[:-1]**2)
-    sqrt_gamma_minus_1 = torch.sqrt(torch.clamp(gamma_all - 1, min=0.0))
-
-    u = net.u_constant
-    scaling_factor = torch.max(sqrt_gamma_minus_1 / u)
-
-    if scaling_factor > 1:
-        u = u * scaling_factor
-
-    for i in tqdm.trange(num_steps, desc="Sampling"):
-        t = ts[i].unsqueeze(0)
-        s = ts[i + 1].unsqueeze(0)
-
-        alpha_t = net._alpha(t)
-        sigma_t = net._sigma(t)
-        alpha_s = net._alpha(s)
-        sigma_s = net._sigma(s)
-
-        gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
-
-        numerator = gamma_s - 1
-        denominator = torch.sqrt(gamma_s * u**2) - torch.sqrt(u**2 + 1 - gamma_s)
-        eta_s = numerator / denominator
-
-        eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_scaled / net.u_constant.reshape(-1, 1, 1, 1)
-
-        coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
-        coeff_z = alpha_s / alpha_t
-
-        eps = torch.randn_like(z_t) if i < num_steps - 1 else 0
-
-        z_t = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z_t + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
-    return z_t
-
-# NIE DZIAŁA JESZCZE
 @torch.no_grad()
-def continous(net, num_steps, ts, z_t, class_labels):
-    lambda_prime_all = -net._d_lambda(ts[1:])
-    u = net.u_constant
-    sqrt_expr = torch.sqrt(u**2 + lambda_prime_all)
-    scaling_factor = torch.max(sqrt_expr / u)
+def eta_discrete(u, alpha_s, alpha_t, sigma_s, sigma_t):
+    gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
 
-    if scaling_factor > 1:
-        u = u * scaling_factor
+    numerator = gamma_s - 1
+    denominator = torch.sqrt(gamma_s * u**2) - torch.sqrt(u**2 + 1 - gamma_s)
+    return numerator / denominator
 
-    for i in tqdm.trange(num_steps, desc="Sampling"):
-        t = ts[i].unsqueeze(0)
-        s = ts[i + 1].unsqueeze(0)
-
-        alpha_t = net._alpha(t)
-        alpha_s = net._alpha(s)
-
-        lambda_s_prime = net._d_lambda(s)
-        eta_s = u - torch.sqrt(u**2 + lambda_s_prime)
-
-        eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_scaled / net.u_constant.reshape(-1, 1, 1, 1)
-
-        coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
-        coeff_z = alpha_s / alpha_t
-
-        eps = torch.randn_like(z_t) if i < num_steps - 1 else 0
-
-        z_t = (
-            coeff_eps.reshape(-1, 1, 1, 1) * eps_pred +
-            coeff_z.reshape(-1, 1, 1, 1) * z_t +
-            sigma_s.reshape(-1, 1, 1, 1) * eta_s.reshape(-1, 1, 1, 1) * eps
-        )
-    return z_t
+@torch.no_grad()
+def eta_continous(net, s):
+    lambda_s_prime = net._d_lambda(s)
+    eta_s = net.u_constant - torch.sqrt(net.u_constant**2 + lambda_s_prime)
+    return eta_s
 
 
 @torch.no_grad()
@@ -146,20 +57,33 @@ def sample_images_from_model(
     z_t = torch.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
     ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device)
 
-    # tu wybiera się etę
-    # 1. eta = 1
-    # 2. eta z pliku not_main.pdf
-    # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
-    z_1 = normalization(net, num_steps, ts, z_t, class_labels) 
-    # z_2 = without_normalization(net, num_steps, ts, z_t, class_labels) 
-    # z_3 = continous(net, num_steps, ts, z_t, class_labels) 
+    for i in tqdm.trange(num_steps, desc="Sampling"):
+        t = ts[i].unsqueeze(0)
+        s = ts[i + 1].unsqueeze(0)
 
-    # save_image_grid(z_1, 'normalization.png', gridw, gridh)
-    # save_image_grid(z_2, 'without_normalization.png', gridw, gridh)
-    # save_image_grid(z_3, 'continous.png', gridw, gridh)
+        alpha_t = net._alpha(t)
+        sigma_t = net._sigma(t)
+        alpha_s = net._alpha(s)
+        sigma_s = net._sigma(s)
 
+        # 1. eta = 1
+        # 2. eta z pliku not_main.pdf
+        # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
+        eta_s = eta_constant(t)
+        eta_s = eta_discrete(net.u_constant, alpha_t, alpha_s, sigma_s, sigma_t)
+        eta_s = eta_continous(net, s)
 
+        eps_scaled = net(z_t, t, class_labels)
+        eps_pred = eps_scaled / net.u_constant.reshape(-1, 1, 1, 1)
 
+        coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
+        coeff_z = alpha_s / alpha_t
+
+        eps = torch.randn_like(z_t) if i < num_steps - 1 else 0
+
+        z_t = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z_t + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
+    
+    save_image_grid(z_t, output_path, gridw, gridh)
 
 def save_image_grid(images, path, gridw, gridh):
     images = (images * 127.5 + 128).clamp(0, 255).to(torch.uint8)
@@ -171,14 +95,14 @@ def save_image_grid(images, path, gridw, gridh):
 
 def main():
     network_path = 'model/ueps.pkl'  
-    output_path = 'output.png'
+    output_path = 'result_my_generate.png'
     sample_images_from_model(
         network_pkl=network_path,
         dest_path=output_path,
         seed=2137,
         gridw=8,
         gridh=8,
-        num_steps=18,
+        num_steps=4,
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     )
 
