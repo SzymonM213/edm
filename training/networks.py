@@ -701,13 +701,20 @@ class UPrecond(torch.nn.Module):
         self.u_constant = torch.max(-self.d_lambda(t_min), -self.d_lambda(t_max)) + 1e-3
 
     def alpha(self, t):
-        return torch.cos(t * torch.pi / 2)
+        return (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) / 
+            torch.cos(torch.tensor(0.008) * torch.pi / torch.tensor(2.016)))
     
     def sigma(self, t):
-        return torch.sin(t * torch.pi / 2)
-    
+        return torch.sqrt(1 - self.alpha(t) ** 2)
+
+    def lambda_(self, t):
+        return 2 * torch.log(self.alpha(t) / self.sigma(t))
+
     def d_lambda(self, t):
-        return -torch.pi / (torch.cos(t * torch.pi / 2) * torch.sin(t * torch.pi / 2))
+        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5Dlog%5C%2840%29Divide%5B%5C%2840%29cos%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29*Divide%5Bpi%2C2.016%5D%5C%2841%29%5C%2841%29%2Csin%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29+*+Divide%5Bpi%2C2.016%5D%5C%2841%29%5D%5C%2841%29
+        return - 2 * torch.pi / (torch.tensor(2.016) * 
+                                (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) * 
+                                torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
     
     def u(self, t):
         return torch.full_like(t, self.u_constant)
@@ -725,6 +732,65 @@ class UPrecond(torch.nn.Module):
         assert F_x.dtype == dtype
         return F_x
 
+class UPrecondScore(torch.nn.Module):
+    def __init__(self,
+        img_resolution,                     # Image resolution.
+        img_channels,                       # Number of color channels.
+        label_dim       = 0,                # Number of class labels, 0 = unconditional.
+        use_fp16        = False,            # Execute the underlying model at FP16 precision?
+        sigma_min       = 0,                # Minimum supported noise level.
+        sigma_max       = float('inf'),     # Maximum supported noise level.
+        sigma_data      = 0.5,              # Expected standard deviation of the training data.
+        model_type      = 'DhariwalUNet',   # Class name of the underlying model.
+        t_min           = torch.tensor(5e-3),
+        t_max           = torch.tensor(1 - 5e-3),
+        **model_kwargs,                     # Keyword arguments for the underlying model.
+    ):
+        super().__init__()
+        self.img_resolution = img_resolution
+        self.img_channels = img_channels
+        self.label_dim = label_dim
+        self.use_fp16 = use_fp16
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        self.sigma_data = sigma_data
+        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
+
+        self.t_min = t_min
+        self.t_max = t_max
+
+    def alpha(self, t):
+        return (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) / 
+            torch.cos(torch.tensor(0.008) * torch.pi / torch.tensor(2.016)))
+    
+    def sigma(self, t):
+        return torch.sqrt(1 - self.alpha(t) ** 2)
+
+    def lambda_(self, t):
+        return 2 * torch.log(self.alpha(t) / self.sigma(t))
+
+    def d_lambda(self, t):
+        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5Dlog%5C%2840%29Divide%5B%5C%2840%29cos%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29*Divide%5Bpi%2C2.016%5D%5C%2841%29%5C%2841%29%2Csin%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29+*+Divide%5Bpi%2C2.016%5D%5C%2841%29%5D%5C%2841%29
+        return - 2 * torch.pi / (torch.tensor(2.016) * 
+                                (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) * 
+                                torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
+
+    def u(self, t):
+        return 1 / self.sigma(t) * 20 # to satisfy u(t)^2 > -d_lambda(t)
+
+    def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
+        x = x.to(torch.float32)
+        sigma = self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
+        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
+        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+
+        c_noise = sigma.log() / 4
+
+        # Inspired by the edm, maybe can pass just sigma instead of c_noise
+        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
+        assert F_x.dtype == dtype
+        return F_x
+    
 class UPrecondScoreVE(torch.nn.Module):
     def __init__(self,
         img_resolution,                     # Image resolution.
