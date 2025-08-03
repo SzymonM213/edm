@@ -45,11 +45,12 @@ def our_sampler(
     latents,
     class_labels = None,
     randn_like=torch.randn_like,
-    num_steps = 5,
-    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-    t_min = torch.tensor(5e-3),
+    num_steps = 5, sigma_min=0.002, sigma_max=80, rho=7,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,):
+
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    t_min = torch.tensor(5e-3)
     t_max = torch.tensor(1 - 5e-3)
-    ):
 
     z_t = latents.to(device)
     ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device)
