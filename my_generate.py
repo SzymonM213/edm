@@ -7,6 +7,7 @@ import pickle
 import PIL.Image
 import dnnlib
 import os
+import datetime
 
 @torch.no_grad()
 def eta_constant(t):
@@ -50,9 +51,9 @@ def sample_images_from_model(
 
     class_labels = torch.eye(net.label_dim, device=device)[torch.randint(net.label_dim, size=[batch_size], device=device)]
 
-    # jeżeli chcesz same jelenie to zostaw te linijki, jeżeli wszytsko to zakomentuj
-    class_labels[:, :] = 0
-    class_labels[:, class_index] = 1
+    # # jeżeli chcesz same jelenie to zostaw te linijki, jeżeli wszytsko to zakomentuj
+    # class_labels[:, :] = 0
+    # class_labels[:, class_index] = 1
 
     z_t = torch.randn([batch_size, net.img_channels, net.img_resolution, net.img_resolution], device=device)
     ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device)
@@ -61,20 +62,24 @@ def sample_images_from_model(
         t = ts[i].unsqueeze(0)
         s = ts[i + 1].unsqueeze(0)
 
-        alpha_t = net._alpha(t)
-        sigma_t = net._sigma(t)
-        alpha_s = net._alpha(s)
-        sigma_s = net._sigma(s)
+        alpha_t = net.alpha(t)
+        sigma_t = net.sigma(t)
+        alpha_s = net.alpha(s)
+        sigma_s = net.sigma(s)
+
+        u_s = net.u(s)
+        u_t = net.u(t)
 
         # 1. eta = 1
         # 2. eta z pliku not_main.pdf
         # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
-        eta_s = eta_constant(t)
-        eta_s = eta_discrete(net.u_constant, alpha_t, alpha_s, sigma_s, sigma_t)
-        eta_s = eta_continous(net, s)
+        # eta_s = eta_constant(t)
+        eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+        # eta_s = torch.tensor(0).to(device)
+        # eta_s = eta_continous(net, s)
 
         eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_pred = eps_scaled / net.u_constant.to(device).reshape(-1, 1, 1, 1)
+        eps_pred = eps_scaled / u_t.reshape(-1, 1, 1, 1)
 
         coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
         coeff_z = alpha_s / alpha_t
@@ -95,14 +100,14 @@ def save_image_grid(images, path, gridw, gridh):
 
 def main():
     network_path = 'model/ueps.pkl'  
-    output_path = 'result_my_generate.png'
+    output_path = f'output/generated_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
     sample_images_from_model(
         network_pkl=network_path,
         dest_path=output_path,
-        seed=2137,
+        seed=42,
         gridw=8,
         gridh=8,
-        num_steps=4,
+        num_steps=18,
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     )
 
