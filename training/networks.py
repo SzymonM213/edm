@@ -815,12 +815,19 @@ class UPrecondScoreVE(torch.nn.Module):
         return - 2 * torch.pi / (torch.tensor(2.016) * 
                                 (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) * 
                                 torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
+    
+    def la(self, t):
+        return 2 * torch.pi / torch.sin(t * torch.pi)
 
     def u(self, t):
+        # return torch.max(
+        #     1 / self.sigma(t),
+        #     -self.d_lambda(t) * self.sigma(t) / 2
+        # ) * 2 # to satisfy u(t)^2 > -d_lambda(t)
         return torch.max(
             1 / self.sigma(t),
-            -self.d_lambda(t) * self.sigma(t) / 2
-        ) * 2 # to satisfy u(t)^2 > -d_lambda(t)
+            self.la(t) * self.sigma(t) / 2
+        ) * 2
 
     def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
