@@ -45,7 +45,7 @@ def parse_int_list(s):
 @click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True)
 @click.option('--cond',          help='Train class-conditional model', metavar='BOOL',              type=bool, default=False, show_default=True)
 @click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm']), default='ddpmpp', show_default=True)
-@click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm|uloss|usve|uscore', type=click.Choice(['vp', 've', 'edm', 'monotonicedm', 'uloss', 'usve', 'uscore']), default='edm', show_default=True)
+@click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm|uloss|usve|uscore|uve', type=click.Choice(['vp', 've', 'edm', 'monotonicedm', 'uloss', 'usve', 'uscore', 'uve']), default='edm', show_default=True)
 
 # Hyperparameters.
 @click.option('--duration',      help='Training duration', metavar='MIMG',                          type=click.FloatRange(min=0, min_open=True), default=200, show_default=True)
@@ -141,6 +141,9 @@ def main(**kwargs):
         c.loss_kwargs.class_name = 'training.loss.ULoss'
     elif opts.precond == 'uscore':
         c.network_kwargs.class_name = 'training.networks.UPrecondScore'
+        c.loss_kwargs.class_name = 'training.loss.ULoss'
+    elif opts.precond == 'uve':
+        c.network_kwargs.class_name = 'training.networks.UPrecondVE'
         c.loss_kwargs.class_name = 'training.loss.ULoss'
     else:
         assert opts.precond == 'uloss'
