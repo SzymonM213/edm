@@ -46,7 +46,7 @@ def our_sampler(
     class_labels = None,
     randn_like=torch.randn_like,
     num_steps = 5,
-    device=torch.device('cuda'),
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
     t_min = torch.tensor(5e-3),
     t_max = torch.tensor(1 - 5e-3)
     ):
@@ -58,20 +58,23 @@ def our_sampler(
         t = ts[i].unsqueeze(0)
         s = ts[i + 1].unsqueeze(0)
 
-        alpha_t = net._alpha(t)
-        sigma_t = net._sigma(t)
-        alpha_s = net._alpha(s)
-        sigma_s = net._sigma(s)
+        alpha_t = net.alpha(t)
+        sigma_t = net.sigma(t)
+        alpha_s = net.alpha(s)
+        sigma_s = net.sigma(s)
+
+        u_s = net.u(s)
+        u_t = net.u(t)
 
         # 1. eta = 1
         # 2. eta z pliku not_main.pdf
         # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
-        eta_s = eta_constant(t)
-        # eta_s = eta_discrete(net.u_constant, alpha_t, alpha_s, sigma_s, sigma_t)
+        # eta_s = eta_constant(t)
+        eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
         # eta_s = eta_continous(net, s)
 
         eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_pred = eps_scaled / net.u_constant.to(device).reshape(-1, 1, 1, 1)
+        eps_pred = eps_pred = eps_scaled / u_t.reshape(-1, 1, 1, 1)
 
         coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
         coeff_z = alpha_s / alpha_t
@@ -80,8 +83,6 @@ def our_sampler(
 
         z_t = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z_t + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
     return z_t
-    
-
 
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
