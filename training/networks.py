@@ -678,9 +678,6 @@ class UPrecond(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        sigma_min       = 0,                # Minimum supported noise level.
-        sigma_max       = float('inf'),     # Maximum supported noise level.
-        sigma_data      = 0.5,              # Expected standard deviation of the training data.
         model_type      = 'DhariwalUNet',   # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
@@ -691,9 +688,6 @@ class UPrecond(torch.nn.Module):
         self.img_channels = img_channels
         self.label_dim = label_dim
         self.use_fp16 = use_fp16
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-        self.sigma_data = sigma_data
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
         self.t_min = t_min
@@ -738,9 +732,6 @@ class UPrecondScore(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        sigma_min       = 0,                # Minimum supported noise level.
-        sigma_max       = float('inf'),     # Maximum supported noise level.
-        sigma_data      = 0.5,              # Expected standard deviation of the training data.
         model_type      = 'DhariwalUNet',   # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
@@ -751,9 +742,6 @@ class UPrecondScore(torch.nn.Module):
         self.img_channels = img_channels
         self.label_dim = label_dim
         self.use_fp16 = use_fp16
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-        self.sigma_data = sigma_data
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
         self.t_min = t_min
@@ -797,9 +785,6 @@ class UPrecondScoreVE(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        sigma_min       = 0,                # Minimum supported noise level.
-        sigma_max       = float('inf'),     # Maximum supported noise level.
-        sigma_data      = 0.5,              # Expected standard deviation of the training data.
         model_type      = 'DhariwalUNet',   # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
@@ -810,9 +795,6 @@ class UPrecondScoreVE(torch.nn.Module):
         self.img_channels = img_channels
         self.label_dim = label_dim
         self.use_fp16 = use_fp16
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-        self.sigma_data = sigma_data
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
         self.t_min = t_min
