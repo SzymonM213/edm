@@ -764,7 +764,7 @@ class UPrecondScore(torch.nn.Module):
                                 torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
 
     def u(self, t):
-        return self.sigma(t)
+        return 1 / self.sigma(t)
 
     def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
