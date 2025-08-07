@@ -732,7 +732,7 @@ class UPrecondScore(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        model_type      = 'DhariwalUNet',   # Class name of the underlying model.
+        model_type      = 'SongUNet',       # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
         **model_kwargs,                     # Keyword arguments for the underlying model.
