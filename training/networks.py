@@ -779,7 +779,7 @@ class UPrecondScore(torch.nn.Module):
         assert F_x.dtype == dtype
         return F_x
 
-class UPrecondVE(torch.nn.Module):
+class UPrecondVel(torch.nn.Module):
     def __init__(self,
         img_resolution,                     # Image resolution.
         img_channels,                       # Number of color channels.
@@ -801,30 +801,19 @@ class UPrecondVE(torch.nn.Module):
         self.t_max = t_max
 
     def alpha(self, t):
-        return (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) / 
-            torch.cos(torch.tensor(0.008) * torch.pi / torch.tensor(2.016)))
+        return 1 - t
     
     def sigma(self, t):
-        return torch.sqrt(1 - self.alpha(t) ** 2)
+        return t
 
     def lambda_(self, t):
         return 2 * torch.log(self.alpha(t) / self.sigma(t))
 
     def d_lambda(self, t):
-        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5Dlog%5C%2840%29Divide%5B%5C%2840%29cos%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29*Divide%5Bpi%2C2.016%5D%5C%2841%29%5C%2841%29%2Csin%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29+*+Divide%5Bpi%2C2.016%5D%5C%2841%29%5D%5C%2841%29
-        return - 2 * torch.pi / (torch.tensor(2.016) * 
-                                (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) * 
-                                torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
+        return 2 / (self.sigma(t) * self.alpha(t))
     
-    def la(self, t):
-        return 2 * torch.pi / torch.sin(t * torch.pi)
-
     def u(self, t):
-        # return torch.max(
-        #     1 / self.sigma(t),
-        #     -self.d_lambda(t) * self.sigma(t) / 2
-        # ) * 2 # to satisfy u(t)^2 > -d_lambda(t)
-        return self.la(t) * self.sigma(t) / 2 * 11
+        return 1 / self.alpha(t)
 
     def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
