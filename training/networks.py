@@ -785,7 +785,7 @@ class UPrecondVel(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        model_type      = 'DhariwalUNet',   # Class name of the underlying model.
+        model_type      = 'SongUNet',   # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
         **model_kwargs,                     # Keyword arguments for the underlying model.
@@ -821,7 +821,7 @@ class UPrecondVel(torch.nn.Module):
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
 
-        c_noise = sigma.log() / 4
+        c_noise = (0.5 * sigma).log()
 
         # Inspired by the edm, maybe can pass just sigma instead of c_noise
         F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
