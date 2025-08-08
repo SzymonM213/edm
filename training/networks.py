@@ -772,7 +772,7 @@ class UPrecondScore(torch.nn.Module):
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
 
-        c_noise = sigma.log() / 4
+        c_noise = (0.5 * sigma).log()
 
         # Inspired by the edm, maybe can pass just sigma instead of c_noise
         F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)

@@ -131,3 +131,27 @@ class ULoss:
         return loss
 
 #----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class ULossTmp:
+    def alpha(self, t):
+        return (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) / 
+            torch.cos(torch.tensor(0.008) * torch.pi / torch.tensor(2.016)))
+    
+    def sigma(self, t):
+        return torch.sqrt(1 - self.alpha(t) ** 2)
+    
+    def u(self, t):
+        return 1 / self.sigma(t)
+
+    def __call__(self, net, images, labels=None, augment_pipe=None):
+        t = torch.rand([images.shape[0]], device=images.device)
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        eps = torch.randn_like(y)
+        D_yn = net(y * self.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + 
+                   eps * self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1), 
+                   t, labels, augment_labels=augment_labels)
+        loss = (D_yn - eps * self.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        return loss
+
+#----------------------------------------------------------------------------

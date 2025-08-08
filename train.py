@@ -141,7 +141,7 @@ def main(**kwargs):
         c.loss_kwargs.class_name = 'training.loss.ULoss'
     elif opts.precond == 'uscore':
         c.network_kwargs.class_name = 'training.networks.UPrecondScore'
-        c.loss_kwargs.class_name = 'training.loss.ULoss'
+        c.loss_kwargs.class_name = 'training.loss.ULossTmp'
     elif opts.precond == 'uvel':
         c.network_kwargs.class_name = 'training.networks.UPrecondVel'
         c.loss_kwargs.class_name = 'training.loss.ULoss'
