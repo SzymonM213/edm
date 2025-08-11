@@ -131,3 +131,18 @@ class ULoss:
         return loss
 
 #----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class ULossVel:
+    def __call__(self, net, images, labels=None, augment_pipe=None):
+        t = torch.rand([images.shape[0]], device=images.device)
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        eps = torch.randn_like(y)
+        z_t = (y * net.module.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) +
+               eps * net.module.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1))
+        D_yn = net(z_t, t, labels, augment_labels=augment_labels)
+        # loss = (D_yn - eps * net.module.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        loss = (D_yn - (eps + z_t) * net.module.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        return loss
+
+#----------------------------------------------------------------------------
