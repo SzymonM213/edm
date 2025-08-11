@@ -785,7 +785,7 @@ class UPrecondVel(torch.nn.Module):
         img_channels,                       # Number of color channels.
         label_dim       = 0,                # Number of class labels, 0 = unconditional.
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        model_type      = 'SongUNet',   # Class name of the underlying model.
+        model_type      = 'DhariwalUNet',   # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
         **model_kwargs,                     # Keyword arguments for the underlying model.
@@ -815,6 +815,7 @@ class UPrecondVel(torch.nn.Module):
     def u(self, t):
         return 1 / self.alpha(t)
 
+    # predicts U_t * eps_t
     def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
         x = x.to(torch.float32)
         sigma = self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
@@ -822,12 +823,13 @@ class UPrecondVel(torch.nn.Module):
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
 
-        c_noise = (sigma / alpha).log()
+        c_noise = sigma.log() / 4
 
         # Inspired by the edm, maybe can pass just sigma instead of c_noise
-        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
+        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs) # z_t / alpha_t + eps_t / alpha_t
         assert F_x.dtype == dtype
-        return F_x
+        D_x = F_x - (x / alpha).to(dtype)  # eps_t / alpha_t
+        return D_x
     
 class UPrecondScoreVE(torch.nn.Module):
     def __init__(self,
