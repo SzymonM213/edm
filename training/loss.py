@@ -138,6 +138,7 @@ class ULossVel:
         t = torch.rand([images.shape[0]], device=images.device)
         y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
         eps = torch.randn_like(y)
+        print(f"ULossVel: t={t}, alpha={net.module.alpha(t)}, sigma={net.module.sigma(t)}, u={net.module.u(t)}")
         z_t = (y * net.module.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) +
                eps * net.module.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1))
         D_yn = net(z_t, t, labels, augment_labels=augment_labels)
