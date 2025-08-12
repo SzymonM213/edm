@@ -735,6 +735,8 @@ class UPrecondScore(torch.nn.Module):
         model_type      = 'SongUNet',       # Class name of the underlying model.
         t_min           = torch.tensor(5e-3),
         t_max           = torch.tensor(1 - 5e-3),
+        sigma_min       = 0.02,         # Minimum supported noise level.
+        sigma_max       = 100,          # Maximum supported noise level.
         **model_kwargs,                     # Keyword arguments for the underlying model.
     ):
         super().__init__()
@@ -744,25 +746,15 @@ class UPrecondScore(torch.nn.Module):
         self.use_fp16 = use_fp16
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
-        self.t_min = t_min
-        self.t_max = t_max
+        self.sigma_min = torch.as_tensor(sigma_min)
+        self.sigma_max = torch.as_tensor(sigma_max)
 
-    def alpha(self, t):
-        return (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) / 
-            torch.cos(torch.tensor(0.008) * torch.pi / torch.tensor(2.016)))
+    def alpha(self, _):
+        return 1
     
     def sigma(self, t):
-        return torch.sqrt(1 - self.alpha(t) ** 2)
-
-    def lambda_(self, t):
-        return 2 * torch.log(self.alpha(t) / self.sigma(t))
-
-    def d_lambda(self, t):
-        # https://www.wolframalpha.com/input?i2d=true&i=Divide%5Bd%2Cdt%5Dlog%5C%2840%29Divide%5B%5C%2840%29cos%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29*Divide%5Bpi%2C2.016%5D%5C%2841%29%5C%2841%29%2Csin%5C%2840%29%5C%2840%29t%2B0.008%5C%2841%29+*+Divide%5Bpi%2C2.016%5D%5C%2841%29%5D%5C%2841%29
-        return - 2 * torch.pi / (torch.tensor(2.016) * 
-                                (torch.cos((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016)) * 
-                                torch.sin((t + torch.tensor(0.008)) * torch.pi / torch.tensor(2.016))))
-
+        return self.sigma_min * (self.sigma_max / self.sigma_min) ** t
+    
     def u(self, t):
         return 1 / self.sigma(t)
 
