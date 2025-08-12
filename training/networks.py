@@ -827,10 +827,9 @@ class UPrecondVel(torch.nn.Module):
 
         # print(f"UPrecondVel: sigma={sigma}, alpha={alpha}, u={self.u(t)}")
         # Inspired by the edm, maybe can pass just sigma instead of c_noise
-        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs) # eps_t * U_t
+        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs) # z_t / alpha_t + eps_t / alpha_t
         assert F_x.dtype == dtype
-        D_x = x / alpha - F_x
-        return D_x
+        return F_x
     
 class UPrecondScoreVE(torch.nn.Module):
     def __init__(self,
