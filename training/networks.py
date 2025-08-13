@@ -750,7 +750,7 @@ class UPrecondScore(torch.nn.Module):
         self.sigma_max = torch.as_tensor(sigma_max)
 
     def alpha(self, _):
-        return 1
+        return torch.tensor(1.0)
     
     def sigma(self, t):
         return self.sigma_min * (self.sigma_max / self.sigma_min) ** t
