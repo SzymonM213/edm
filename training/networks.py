@@ -753,7 +753,7 @@ class UPrecondScore(torch.nn.Module):
         return torch.ones_like(t, dtype=torch.float32)
     
     def sigma(self, t):
-        t t.to(dtype=torch.float32)
+        t = t.to(dtype=torch.float32)
         return self.sigma_min * (self.sigma_max / self.sigma_min) ** t
     
     def u(self, t):
