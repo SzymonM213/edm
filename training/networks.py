@@ -746,13 +746,14 @@ class UPrecondScore(torch.nn.Module):
         self.use_fp16 = use_fp16
         self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
 
-        self.sigma_min = torch.as_tensor(sigma_min)
-        self.sigma_max = torch.as_tensor(sigma_max)
+        self.register_buffer('sigma_min', torch.tensor(float(sigma_min), dtype=torch.float32))
+        self.register_buffer('sigma_max', torch.tensor(float(sigma_max), dtype=torch.float32))
 
-    def alpha(self, _):
-        return torch.as_tensor(1.0)
+    def alpha(self, t):
+        return torch.ones_like(t, dtype=torch.float32)
     
     def sigma(self, t):
+        t t.to(dtype=torch.float32)
         return self.sigma_min * (self.sigma_max / self.sigma_min) ** t
     
     def u(self, t):
