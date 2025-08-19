@@ -726,52 +726,6 @@ class UPrecond(torch.nn.Module):
         assert F_x.dtype == dtype
         return F_x
 
-class UPrecondScore(torch.nn.Module):
-    def __init__(self,
-        img_resolution,                     # Image resolution.
-        img_channels,                       # Number of color channels.
-        label_dim       = 0,                # Number of class labels, 0 = unconditional.
-        use_fp16        = False,            # Execute the underlying model at FP16 precision?
-        model_type      = 'SongUNet',       # Class name of the underlying model.
-        t_min           = torch.tensor(5e-3),
-        t_max           = torch.tensor(1 - 5e-3),
-        sigma_min       = 0.02,         # Minimum supported noise level.
-        sigma_max       = 100,          # Maximum supported noise level.
-        **model_kwargs,                     # Keyword arguments for the underlying model.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.model = globals()[model_type](img_resolution=img_resolution, in_channels=img_channels, out_channels=img_channels, label_dim=label_dim, **model_kwargs)
-
-        self.register_buffer('sigma_min', torch.tensor(float(sigma_min), dtype=torch.float32))
-        self.register_buffer('sigma_max', torch.tensor(float(sigma_max), dtype=torch.float32))
-
-    def alpha(self, t):
-        return torch.ones_like(t, dtype=torch.float32)
-    
-    def sigma(self, t):
-        t = t.to(dtype=torch.float32)
-        return self.sigma_min * (self.sigma_max / self.sigma_min) ** t
-    
-    def u(self, t):
-        return 1 / self.sigma(t)
-
-    def forward(self, x, t, class_labels=None, force_fp32=False, **model_kwargs):
-        x = x.to(torch.float32)
-        sigma = self.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        c_noise = (0.5 * sigma).log()
-
-        # Inspired by the edm, maybe can pass just sigma instead of c_noise
-        F_x = self.model(x.to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
-        assert F_x.dtype == dtype
-        return F_x
-
 class UPrecondVel(torch.nn.Module):
     def __init__(self,
         img_resolution,                     # Image resolution.
