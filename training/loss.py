@@ -121,13 +121,29 @@ class MonotonicEDMLoss:
 @persistence.persistent_class
 class ULoss:
     def __call__(self, net, images, labels=None, augment_pipe=None):
-        t = torch.rand([images.shape[0]], device=images.device) * (net.module.t_max - net.module.t_min) + net.module.t_min
+        t = torch.rand([images.shape[0]], device=images.device)
         y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
         eps = torch.randn_like(y)
         D_yn = net(y * net.module.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) + 
                    eps * net.module.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1), 
                    t, labels, augment_labels=augment_labels)
         loss = (D_yn - eps * net.module.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        return loss
+
+#----------------------------------------------------------------------------
+
+@persistence.persistent_class
+class ULossVel:
+    def __call__(self, net, images, labels=None, augment_pipe=None):
+        t = torch.rand([images.shape[0]], device=images.device)
+        y, augment_labels = augment_pipe(images) if augment_pipe is not None else (images, None)
+        eps = torch.randn_like(y)
+        # print(f"ULossVel: t={t}, alpha={net.module.alpha(t)}, sigma={net.module.sigma(t)}, u={net.module.u(t)}")
+        z_t = (y * net.module.alpha(t).to(torch.float32).reshape(-1, 1, 1, 1) +
+               eps * net.module.sigma(t).to(torch.float32).reshape(-1, 1, 1, 1))
+        D_yn = net(z_t, t, labels, augment_labels=augment_labels)
+        # loss = (D_yn - eps * net.module.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
+        loss = (D_yn - (z_t - eps) * net.module.u(t).to(torch.float32).reshape(-1, 1, 1, 1)) ** 2
         return loss
 
 #----------------------------------------------------------------------------
