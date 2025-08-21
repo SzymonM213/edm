@@ -122,6 +122,10 @@ def edm_sampler(
 
     return x_next
 
+def cont_sampler():
+    # TODO - implement continuous sampling
+    pass
+
 #----------------------------------------------------------------------------
 # Generalized ablation sampler, representing the superset of all sampling
 # methods discussed in the paper.
