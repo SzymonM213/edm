@@ -64,7 +64,7 @@ def our_sampler(
         alpha_s = net.alpha(s)
         sigma_s = net.sigma(s)
 
-        u_s = net.u(s)
+        u_s = net.u(s) * 12
         u_t = net.u(t)
 
         # 1. eta = 1
@@ -72,10 +72,11 @@ def our_sampler(
         # 3. eta z pliku Pokarowski_Heidelberg2025.pdf
         # eta_s = eta_constant(t)
         eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+        # eta_s = torch.tensor(0).to(device)
         # eta_s = eta_continous(net, s)
 
         eps_scaled = net(z_t, t, class_labels)
-        eps_pred = eps_pred = eps_scaled / u_t.reshape(-1, 1, 1, 1)
+        eps_pred = z_t - eps_scaled / u_t.reshape(-1,1,1,1)
 
         coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
         coeff_z = alpha_s / alpha_t
@@ -533,15 +534,16 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
         # Continuous-time route when the net exposes alpha/sigma/u; choose SDE if eta>0.
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
-            eta = sampler_kwargs.pop('eta', 0.0)
-            if eta and eta > 0:
-                ct_allowed = {'num_steps', 't_min', 't_max'}
-                ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-                images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, eta=eta, **ct_kwargs)
-            else:
-                ct_allowed = {'num_steps', 't_min', 't_max', 'method'}
-                ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-                images = vel_ode_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # eta = sampler_kwargs.pop('eta', 0.0)
+            # if eta and eta > 0:
+            #     ct_allowed = {'num_steps', 't_min', 't_max'}
+            #     ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
+            #     images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, eta=eta, **ct_kwargs)
+            # else:
+            #     ct_allowed = {'num_steps', 't_min', 't_max', 'method'}
+            #     ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
+            #     images = vel_ode_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = our_sampler(net, latents, class_labels, randn_like=rnd.randn_like, num_steps=18)
         else:
             sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
             images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
