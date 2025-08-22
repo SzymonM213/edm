@@ -753,11 +753,19 @@ class UPrecondVel(torch.nn.Module):
     def sigma(self, t):
         return t
 
+    def d_alpha(self, t):
+        # d/dt (1 - t) = -1
+        return -torch.ones_like(t)
+
+    def d_sigma(self, t):
+        # d/dt (t) = 1
+        return torch.ones_like(t)
+
     def lambda_(self, t):
         return 2 * torch.log(self.alpha(t) / self.sigma(t))
 
     def d_lambda(self, t):
-        return 2 / (self.sigma(t) * self.alpha(t))
+        return -2 / (self.sigma(t) * self.alpha(t))
     
     def u(self, t):
         return 1 / self.alpha(t)
