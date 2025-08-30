@@ -5,7 +5,7 @@ import math
 # ER-SDE-solver
 
 # noise scale fuction
-def customized_func(sigma, func_type=7, eta=0):
+def customized_func(sigma, func_type=8, eta=0):
     """
     We provide several feasible special solutions.
     You can customize the specific solution you want as long as
@@ -25,7 +25,26 @@ def customized_func(sigma, func_type=7, eta=0):
     elif func_type == 6:  # SDE_4
         return sigma ** 0.9 * torch.log10(1 + 100 * sigma ** 1.5)
     elif func_type == 7:  # SDE_5
+        # print(f"value {torch.max(sigma * (torch.exp(sigma ** 0.3) + 10)), torch.min(sigma * (torch.exp(sigma ** 0.3) + 10))}")
         return sigma * (torch.exp(sigma ** 0.3) + 10)
+    elif func_type == 8: # pokar eta
+        u = lambda s: 1 / torch.sqrt(1 + 4*s**2)
+        us = lambda s: u(s) * s
+        d_lambda = lambda s: -2
+        # print u and d_lambda for which u(sigma)**2 + d_lambda(sigma) < 0
+        mask = (us(sigma)**2 + d_lambda(sigma) < 0)
+        if torch.any(mask):
+            print("Warning: u(sigma)^2 + d_lambda(sigma) < 0 for some sigma values")
+            print("These sigma values are:", sigma[mask])
+            print(f"u = {us(sigma[mask]) ** 2}, d_lambda = {d_lambda(sigma[mask])}")
+            # assert False
+        # assert torch.all(u(sigma)**2 + d_lambda(sigma) >= 0), "u(sigma)^2 + d_lambda(sigma) must be non-negative to avoid NaN"
+        eta = (us(sigma) + torch.sqrt(torch.clip(us(sigma)**2 + d_lambda(sigma), 0)))
+        # print("Max eta:", torch.max(eta), "sigma: ", sigma)
+        print(f"value {torch.max(eta * sigma), torch.min(eta * sigma)}")
+        return sigma * eta
+
+
 
 class ER_SDE_Solver:
     def uvel_3_order_taylor(
@@ -305,6 +324,65 @@ class ER_SDE_Solver:
                 old_x0 = x0
                 old_d_x0 = d_x0
         return x
+
+    @torch.no_grad()
+    def vp_3_order_taylor(
+        self,
+        model,
+        x,
+        alphas,
+        sigmas,
+        times,
+        fn_lambda = customized_func,
+        progress = False,
+        **kwargs,
+    ):
+        """
+        Taylor Method, 3-order ER-SDE Solver.Support vp-type.
+        """
+        # assert self.sde_type == 'vp'
+
+        lambdas = sigmas / alphas
+        num_steps = len(lambdas) - 1
+        indices = range(num_steps)
+
+        nums_intergrate = 100.0
+        nums_indices = torch.arange(nums_intergrate, dtype=torch.float64)
+        if progress:
+            from tqdm.auto import tqdm
+            indices = tqdm(indices)
+
+        old_x0 = None
+        old_d_x0 = None
+        for i in indices:
+            out = model(x, times[i], **kwargs)
+            x0 = self._predict_xstart_from_others(out, x, sigmas[i], alphas[i])
+            r_fn = fn_lambda(lambdas[i + 1]) / fn_lambda(lambdas[i])
+            r_alphas = alphas[i + 1] / alphas[i]
+            noise = torch.randn_like(x) * torch.sqrt(self.numerical_clip(lambdas[i + 1]**2 - lambdas[i]**2 * r_fn**2)) * alphas[i + 1]
+            if old_x0 == None:
+                x = r_alphas * r_fn * x + alphas[i + 1] * (1 - r_fn) * x0 + noise
+            elif (old_x0 != None) and (old_d_x0 == None):
+                lambda_indices = lambdas[i + 1] + nums_indices/ nums_intergrate*(lambdas[i] - lambdas[i + 1])
+                s_int = torch.sum(1.0 / fn_lambda(lambda_indices) * (lambdas[i] - lambdas[i + 1]) / nums_intergrate)
+                d_x0 = (x0 - old_x0)/(lambdas[i] - lambdas[i - 1])
+                x = r_alphas * r_fn * x + alphas[i + 1] * (1 - r_fn) * x0 + alphas[i + 1] * (lambdas[i + 1] - lambdas[i] + s_int * fn_lambda(lambdas[i + 1])) * d_x0 + noise
+
+                old_d_x0 = d_x0
+            else:
+                lambda_indices = lambdas[i + 1] + nums_indices/ nums_intergrate*(lambdas[i] - lambdas[i + 1])
+                s_int = torch.sum(1.0 / fn_lambda(lambda_indices) * (lambdas[i] - lambdas[i + 1]) / nums_intergrate)
+                s_d_int = torch.sum((lambda_indices - lambdas[i])/ fn_lambda(lambda_indices) * (lambdas[i] - lambdas[i + 1]) / nums_intergrate)
+                d_x0 = (x0 - old_x0)/(lambdas[i] - lambdas[i - 1])
+                dd_x0 = 2 * (d_x0 - old_d_x0)/(lambdas[i] - lambdas[i - 2])
+                x = r_alphas * r_fn * x + alphas[i + 1] * (1 - r_fn) * x0 \
+                    + alphas[i + 1] * (lambdas[i + 1] - lambdas[i] + s_int * fn_lambda(lambdas[i + 1])) * d_x0 \
+                    + alphas[i + 1] * ((lambdas[i + 1] - lambdas[i])**2/2 + s_d_int * fn_lambda(lambdas[i + 1])) * dd_x0 + noise
+
+                old_d_x0 = d_x0
+            old_x0 = x0
+        return x
+
       
     def numerical_clip(self, x, eps = 1e-6):
         """
