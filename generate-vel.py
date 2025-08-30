@@ -316,7 +316,7 @@ def vel_sde_sampler_heun(
         u_t = net.u(t).to(dtype64).reshape(-1, 1, 1, 1)
         eps_hat = z - out / u_t
 
-        u_t_eff = u_t * 12
+        u_t_eff = u_t * 6
         assert u_t_eff**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t_eff - torch.sqrt(torch.clamp(u_t_eff**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
@@ -348,7 +348,7 @@ def vel_sde_sampler_heun(
             u_s = net.u(s).to(dtype64).reshape(-1, 1, 1, 1)
             eps_hat_s = z_euler - out_s / u_s
 
-            u_s_eff = u_s * 25
+            u_s_eff = u_s * 6
             assert u_s_eff**2 + lambda_p_s.reshape(-1) >= 0, "u(s)^2 + λ'(s) must be non-negative to derive η_s"
             eta_s_sched = u_s_eff - torch.sqrt(torch.clamp(u_s_eff**2 + lambda_p_s.reshape(-1), min=0))
             eta_s_sched = eta_s_sched.reshape(-1, 1, 1, 1)
@@ -665,8 +665,9 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
             # device = latents.device
             # dtype = torch.float64
             # ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device, dtype=dtype)
+            # alphas = net.alpha(ts)
             # sigmas = net.sigma(ts)
-            # images = solver.uvel_heun(net, latents.to(dtype), sigmas, ts, class_labels=class_labels)
+            # images = solver.vp_3_order_taylor(net, latents.to(dtype), alphas.to(dtype), sigmas.to(dtype), ts.to(dtype))
         else:
             sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
             images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
