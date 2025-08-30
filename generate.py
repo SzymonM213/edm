@@ -18,10 +18,39 @@ import torch
 import PIL.Image
 import dnnlib
 from torch_utils import distributed as dist
+from er_sde_solver import ER_SDE_Solver
+
+def er_sde_sampler(
+        net, latents, class_labels=None, randn_like=torch.randn_like,
+        num_steps=10, sigma_min=0.002, sigma_max=80, rho=7,
+        S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+):  
+    """
+    (VE)ER-SDE-Solver, we provide 1,2,3-order and several feasible special solutions.
+    We recommend using a 3-order algorithm as the default option,
+    you can choose the algorithm you want according to your needs.
+    View the detailed source code in the er_sde_solver.py file.
+    "S_churn=0, S_min=0, S_max=float('inf'), S_noise=1": these parameters are retained
+    in order not to modify other parts of the original code, but they are invalid.
+    """
+    sigma_min = max(sigma_min, net.sigma_min)
+    sigma_max = min(sigma_max, net.sigma_max)
+    step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
+    t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
+    t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])])
+    sigmas = t_steps  # t_N = 0
+    sampler = ER_SDE_Solver(sde_type='ve', model_prediction_type='x_start')
+    x = sampler.ve_start_3_order_taylor(
+        net,
+        latents.to(torch.float64) * t_steps[0],
+        sigmas,
+        t_steps,
+        class_labels = class_labels,
+    )
+    return x
 
 #----------------------------------------------------------------------------
 # Proposed EDM sampler (Algorithm 2).
-
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
     num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
@@ -290,7 +319,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         # Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
-        sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
+        sampler_fn = ablation_sampler if have_ablation_kwargs else er_sde_sampler
         images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
 
         # Save images.

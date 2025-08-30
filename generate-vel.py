@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import PIL.Image
 import dnnlib
+from er_sde_solver import ER_SDE_Solver
 from torch_utils import distributed as dist
 
 @torch.no_grad()
@@ -238,7 +239,7 @@ def vel_sde_sampler(
         assert u_t**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
-        print(f"eta_t_sched: {eta_t_sched}")
+        # print(f"eta_t_sched: {eta_t_sched}")
 
         eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
 
@@ -253,6 +254,116 @@ def vel_sde_sampler(
         # Euler–Maruyama step.
         noise = randn_like(z) if i < num_steps - 1 else 0
         z = z + h * f_bar + g_bar * torch.sqrt(torch.abs(h)) * noise
+
+    return z.to(torch.float32)
+# Heun (predictor-corrector) SDE sampler for velocity models
+def vel_sde_sampler_heun(
+    net,
+    latents,
+    class_labels=None,
+    randn_like=torch.randn_like,
+    num_steps=16,
+    t_min=None,
+    t_max=None,
+    eta: float = 1.0,  # Global multiplier for stochasticity. 0 => ODE, 1 => as-scheduled noise.
+):
+    """
+    Heun (predictor-corrector) integrator for the SDE:
+
+        dZ_t = [ (α'_t/α_t) Z_t + σ_t (η_t^2 − λ'_t)/2 · ε_t(Z_t) ] dt + σ_t η_t dW_t,
+
+    where the network predicts x_t − ε_t scaled by u(t): net(x,t) ≈ u(t)·(x_t − ε_t).
+    We recover ε̂_t = z − net(z,t)/u(t) and use it in the drift. η_t is obtained from the
+    model if available; otherwise we fall back to a constant schedule of 1.0 and allow
+    the user to globally scale it with the `eta` argument (eta=0 turns off noise and
+    removes the η_t^2 contribution from the drift as well).
+    """
+    device = latents.device
+    dtype64 = torch.float64
+
+    # Time range.
+    t_min_ = net.t_min.to(device=device, dtype=dtype64) if t_min is None else torch.as_tensor(t_min, device=device, dtype=dtype64)
+    t_max_ = net.t_max.to(device=device, dtype=dtype64) if t_max is None else torch.as_tensor(t_max, device=device, dtype=dtype64)
+
+    ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
+
+    def central_diff(fn, t, eps=1e-4):
+        tp = torch.clamp(t + eps, min=float(t_min_), max=float(t_max_))
+        tm = torch.clamp(t - eps, min=float(t_min_), max=float(t_max_))
+        if torch.allclose(tp, tm):
+            tp = torch.clamp(t + 2*eps, min=float(t_min_), max=float(t_max_))
+            tm = t
+        return (fn(tp) - fn(tm)) / (tp - tm)
+
+    z = latents.to(dtype64)
+
+    for i in range(num_steps):
+        t = ts[i].unsqueeze(0)
+        s = ts[i + 1].unsqueeze(0)
+        h = (s - t).reshape(-1, 1, 1, 1)  # negative step
+
+        # Schedules and required derivatives at t
+        alpha_t = net.alpha(t).to(dtype64)
+        sigma_t = net.sigma(t).to(dtype64)
+        alpha_p = (net.d_alpha(t).to(dtype64)
+                   if hasattr(net, 'd_alpha') else central_diff(net.alpha, t).to(dtype64))
+        if hasattr(net, 'd_lambda'):
+            lambda_p = net.d_lambda(t).to(dtype64)
+        else:
+            lambda_p = torch.zeros_like(alpha_t)
+
+        out = net(z.to(torch.float32), t.to(torch.float32), class_labels).to(dtype64)
+        u_t = net.u(t).to(dtype64).reshape(-1, 1, 1, 1)
+        eps_hat = z - out / u_t
+
+        u_t_eff = u_t * 12
+        assert u_t_eff**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
+        eta_t_sched = u_t_eff - torch.sqrt(torch.clamp(u_t_eff**2 + lambda_p.reshape(-1), min=0))
+        eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
+        eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+
+        a_ratio = (alpha_p / alpha_t).reshape(-1, 1, 1, 1)
+        drift_coeff_eps = (sigma_t * (eta_eff.reshape(-1) ** 2 - lambda_p) / 2).reshape(-1, 1, 1, 1)
+        f_bar = a_ratio * z + drift_coeff_eps * eps_hat
+        g_bar = (sigma_t.reshape(-1, 1, 1, 1) * eta_eff)
+
+        noise = randn_like(z) if i < num_steps - 1 else 0
+        z_euler = z + h * f_bar + g_bar * torch.sqrt(torch.abs(h)) * noise
+
+        if i == num_steps - 1:
+            z = z_euler
+        else:
+            # Heun (predictor-corrector) step
+            # Schedules and required derivatives at s
+            alpha_s = net.alpha(s).to(dtype64)
+            sigma_s = net.sigma(s).to(dtype64)
+            alpha_p_s = (net.d_alpha(s).to(dtype64)
+                         if hasattr(net, 'd_alpha') else central_diff(net.alpha, s).to(dtype64))
+            if hasattr(net, 'd_lambda'):
+                lambda_p_s = net.d_lambda(s).to(dtype64)
+            else:
+                lambda_p_s = torch.zeros_like(alpha_s)
+
+            out_s = net(z_euler.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+            u_s = net.u(s).to(dtype64).reshape(-1, 1, 1, 1)
+            eps_hat_s = z_euler - out_s / u_s
+
+            u_s_eff = u_s * 25
+            assert u_s_eff**2 + lambda_p_s.reshape(-1) >= 0, "u(s)^2 + λ'(s) must be non-negative to derive η_s"
+            eta_s_sched = u_s_eff - torch.sqrt(torch.clamp(u_s_eff**2 + lambda_p_s.reshape(-1), min=0))
+            eta_s_sched = eta_s_sched.reshape(-1, 1, 1, 1)
+            eta_eff_s = eta_s_sched.reshape(-1, 1, 1, 1)
+
+            a_ratio_s = (alpha_p_s / alpha_s).reshape(-1, 1, 1, 1)
+            drift_coeff_eps_s = (sigma_s * (eta_eff_s.reshape(-1) ** 2 - lambda_p_s) / 2).reshape(-1, 1, 1, 1)
+            f_bar_s = a_ratio_s * z_euler + drift_coeff_eps_s * eps_hat_s
+            g_bar_s = (sigma_s.reshape(-1, 1, 1, 1) * eta_eff_s)
+
+            # Average drift and diffusion
+            f_bar_avg = 0.5 * (f_bar + f_bar_s)
+            g_bar_avg = 0.5 * (g_bar + g_bar_s)
+
+            z = z + h * f_bar_avg + g_bar_avg * torch.sqrt(torch.abs(h)) * noise
 
     return z.to(torch.float32)
 
@@ -480,7 +591,7 @@ def parse_int_list(s):
 @click.option('--S_noise', 'S_noise',      help='Stoch. noise inflation', metavar='FLOAT',                          type=float, default=1, show_default=True)
 @click.option('--eta', 'eta',              help='Stochasticity for continuous-time sampling (0=ODE, >0=SDE)',       type=click.FloatRange(min=0), default=0.0, show_default=True)
 
-@click.option('--solver',                  help='Ablate ODE solver', metavar='euler|heun',                          type=click.Choice(['euler', 'heun']))
+@click.option('--solver',                  help='Ablate ODE solver', metavar='euler|heun|taylor',                          type=click.Choice(['euler', 'heun', 'taylor']))
 @click.option('--disc', 'discretization',  help='Ablate time step discretization {t_i}', metavar='vp|ve|iddpm|edm', type=click.Choice(['vp', 've', 'iddpm', 'edm']))
 @click.option('--schedule',                help='Ablate noise schedule sigma(t)', metavar='vp|ve|linear',           type=click.Choice(['vp', 've', 'linear']))
 @click.option('--scaling',                 help='Ablate signal scaling s(t)', metavar='vp|none',                    type=click.Choice(['vp', 'none']))
@@ -521,6 +632,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
     # Loop over batches.
     dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
+    solver = ER_SDE_Solver(sde_type='ve', model_prediction_type='x_start')
     for batch_seeds in tqdm.tqdm(rank_batches, unit='batch', disable=(dist.get_rank() != 0)):
         torch.distributed.barrier()
         batch_size = len(batch_seeds)
@@ -540,19 +652,21 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         # Generate images.
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
-        # Continuous-time route when the net exposes alpha/sigma/u; choose SDE if eta>0.
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
-            eta = sampler_kwargs.pop('eta', 0.0)
-            if eta and eta > 0:
-                ct_allowed = {'num_steps', 't_min', 't_max'}
-                ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-                # Use the new predictor–corrector SDE sampler to avoid Euler–Maruyama.
-                images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, eta=eta, **ct_kwargs)
-            else:
-                ct_allowed = {'num_steps', 't_min', 't_max', 'method'}
-                ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-                images = vel_ode_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            # images = our_sampler(net, latents, class_labels, randn_like=rnd.randn_like, num_steps=18)
+            eta = sampler_kwargs.pop('eta', 1.0)
+            ct_allowed = {'num_steps', 't_min', 't_max'}
+            ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
+            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, eta=eta, **ct_kwargs)
+
+            # # Use uvel_heun from ER_SDE_Solver
+            # num_steps = sampler_kwargs.get('num_steps', 18)
+            # t_min = getattr(net, 't_min', torch.tensor(5e-3))
+            # t_max = getattr(net, 't_max', torch.tensor(1 - 5e-3))
+            # device = latents.device
+            # dtype = torch.float64
+            # ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device, dtype=dtype)
+            # sigmas = net.sigma(ts)
+            # images = solver.uvel_heun(net, latents.to(dtype), sigmas, ts, class_labels=class_labels)
         else:
             sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
             images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
