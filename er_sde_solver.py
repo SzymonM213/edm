@@ -29,8 +29,8 @@ def customized_func(sigma, func_type=8, eta=0):
         return sigma * (torch.exp(sigma ** 0.3) + 10)
     elif func_type == 8: # pokar eta
         u = lambda s: 1 / torch.sqrt(1 + 4*s**2)
-        us = lambda s: u(s) * s
-        d_lambda = lambda s: -2
+        us = lambda s: u(s) * s * 10
+        d_lambdas = lambda s: -2
         # print u and d_lambda for which u(sigma)**2 + d_lambda(sigma) < 0
         # mask = (us(sigma)**2 + d_lambda(sigma) < 0)
         # if torch.any(mask):
@@ -39,7 +39,7 @@ def customized_func(sigma, func_type=8, eta=0):
         #     print(f"u = {us(sigma[mask]) ** 2}, d_lambda = {d_lambda(sigma[mask])}")
             # assert False
         # assert torch.all(u(sigma)**2 + d_lambda(sigma) >= 0), "u(sigma)^2 + d_lambda(sigma) must be non-negative to avoid NaN"
-        eta = (us(sigma) + torch.sqrt(torch.clip(us(sigma)**2 + d_lambda(sigma), 0)))
+        eta = (us(sigma) + torch.sqrt(torch.clip(us(sigma)**2 + d_lambdas(sigma), 0)))
         # print("Max eta:", torch.max(eta), "sigma: ", sigma)
         # print(f"value {torch.max(eta * sigma), torch.min(eta * sigma)}")
         return sigma * eta
