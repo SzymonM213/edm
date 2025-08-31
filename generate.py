@@ -22,7 +22,7 @@ from er_sde_solver import ER_SDE_Solver
 
 def er_sde_sampler(
         net, latents, class_labels=None, randn_like=torch.randn_like,
-        num_steps=10, sigma_min=0.002, sigma_max=80, rho=7,
+        num_steps=50, sigma_min=0.002, sigma_max=80, rho=7,
         S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
 ):  
     """
