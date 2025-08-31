@@ -5,7 +5,7 @@ import math
 # ER-SDE-solver
 
 # noise scale fuction
-def customized_func(sigma, func_type=8, eta=0):
+def customized_func(sigma, func_type=7, eta=0):
     """
     We provide several feasible special solutions.
     You can customize the specific solution you want as long as
