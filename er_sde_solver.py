@@ -244,7 +244,7 @@ class ER_SDE_Solver:
                 r_fn = 0.0
             else:
                 r_fn = torch.sqrt(1 - (u_t - torch.sqrt(u_t**2 + d_lambda(sigma_t)))**2 * sigma_t**2) * sigma_t / sigma_s
-            # r_fn = fn_sigma(sigmas[i + 1]) / fn_sigma(sigmas[i])
+            r_fn = fn_sigma(sigmas[i + 1]) / fn_sigma(sigmas[i])
             # print(f"r_fn = {r_fn}")
             noise = torch.randn_like(x) * torch.sqrt(self.numerical_clip(sigmas[i + 1]**2 - sigmas[i]**2 * r_fn**2))
             # print(f"noise level: {torch.sqrt(self.numerical_clip(sigmas[i + 1]**2 - sigmas[i]**2 * r_fn**2))}")
