@@ -4,6 +4,16 @@ import math
 # Extended Reverse-time SDE solver for Diffusion Model
 # ER-SDE-solver
 
+def d_lambda_sigma(sigma):
+    """
+    d_lambda(sigma) for sigma = exp(.5*qnorm(tt, 2.4, 2.4))
+    """
+    x = 2 * torch.log(sigma)
+    # Normal PDF: 1/(sqrt(2*pi)*2.4) * exp(-0.5*((x-2.4)/2.4)**2)
+    denom = torch.sqrt(torch.tensor(2 * torch.pi)) * 2.4
+    pdf = torch.exp(-0.5 * ((x - 2.4) / 2.4) ** 2) / denom
+    return 1.0 / pdf
+
 # noise scale fuction
 def customized_func(sigma, func_type=7, eta=0):
     """
@@ -31,6 +41,7 @@ def customized_func(sigma, func_type=7, eta=0):
         u = lambda s: 1 / torch.sqrt(1 + 4*s**2)
         us = lambda s: u(s) * s * 10
         d_lambdas = lambda s: -2
+        # d_lambdas = lambda s: d_lambda_sigma(s) * s
         # print u and d_lambda for which u(sigma)**2 + d_lambda(sigma) < 0
         # mask = (us(sigma)**2 + d_lambda(sigma) < 0)
         # if torch.any(mask):
@@ -42,7 +53,7 @@ def customized_func(sigma, func_type=7, eta=0):
         eta = (us(sigma) + torch.sqrt(torch.clip(us(sigma)**2 + d_lambdas(sigma), 0)))
         # print("Max eta:", torch.max(eta), "sigma: ", sigma)
         # print(f"value {torch.max(eta * sigma), torch.min(eta * sigma)}")
-        return sigma * eta
+        return eta * sigma
 
 
 
@@ -222,8 +233,21 @@ class ER_SDE_Solver:
             indices = tqdm(indices)
         for i in indices:
             x0 = model(x, times[i], **kwargs)
-            r_fn = fn_sigma(sigmas[i + 1]) / fn_sigma(sigmas[i])
+
+            u = lambda s: 1 / torch.sqrt(1 + 4*s**2)
+            d_lambda = lambda s: -2 / s
+            sigma_t = sigmas[i+1]
+            sigma_s = sigmas[i]
+            u_t = u(sigma_t) * 116.19
+            # u_t = u(sigma_t) * 200
+            if sigma_t == 0:
+                r_fn = 0.0
+            else:
+                r_fn = torch.sqrt(1 - (u_t - torch.sqrt(u_t**2 + d_lambda(sigma_t)))**2 * sigma_t**2) * sigma_t / sigma_s
+            # r_fn = fn_sigma(sigmas[i + 1]) / fn_sigma(sigmas[i])
+            # print(f"r_fn = {r_fn}")
             noise = torch.randn_like(x) * torch.sqrt(self.numerical_clip(sigmas[i + 1]**2 - sigmas[i]**2 * r_fn**2))
+            # print(f"noise level: {torch.sqrt(self.numerical_clip(sigmas[i + 1]**2 - sigmas[i]**2 * r_fn**2))}")
             x = r_fn * x + (1 - r_fn) * x0 + noise
         return x
 

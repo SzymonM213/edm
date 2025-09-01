@@ -40,7 +40,7 @@ def er_sde_sampler(
     t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])])
     sigmas = t_steps  # t_N = 0
     sampler = ER_SDE_Solver(sde_type='ve', model_prediction_type='x_start')
-    x = sampler.ve_start_3_order_taylor(
+    x = sampler.ve_xstart_1_order(
         net,
         latents.to(torch.float64) * t_steps[0],
         sigmas,
