@@ -26,7 +26,7 @@ def eta_constant(t):
 
 @torch.no_grad()
 def eta_discrete(u, alpha_s, alpha_t, sigma_s, sigma_t):
-    gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
+    gamma_s = ((alpha_s / sigma_s) * (sigma_t / alpha_t))**2
 
     numerator = gamma_s - 1
     assert u**2 + 1 - gamma_s >= 0, "negative number squared"
@@ -376,6 +376,11 @@ def discrete_sampler(
     ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
 
     z = latents.to(dtype64)
+
+    eta_coeff = max((((net.alpha(ts[i+1]) / net.sigma(ts[i+1])) * (net.sigma(ts[i]) / net.alpha(ts[i])))**2 - 1)**(1/2) 
+                    / net.u(ts[i+1]) for i in range(len(ts)-1))
+
+
     for i in range(num_steps):
         t = ts[i].unsqueeze(0)
         s = ts[i + 1].unsqueeze(0)
@@ -385,9 +390,8 @@ def discrete_sampler(
         alpha_s = net.alpha(s)
         sigma_s = net.sigma(s)
 
-        u_s = net.u(s) * 3
+        u_s = net.u(s) * eta_coeff
         u_t = net.u(t)
-
 
         eps_scaled = net(z, t, class_labels)
         eps_pred = z - eps_scaled / u_t.reshape(-1, 1, 1, 1)
