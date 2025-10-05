@@ -262,10 +262,9 @@ def vel_sde_sampler_heun(
     latents,
     class_labels=None,
     randn_like=torch.randn_like,
-    num_steps=16,
+    num_steps=100,
     t_min=None,
     t_max=None,
-    eta: float = 1.0,  # Global multiplier for stochasticity. 0 => ODE, 1 => as-scheduled noise.
 ):
     """
     Heun (predictor-corrector) integrator for the SDE:
@@ -287,14 +286,6 @@ def vel_sde_sampler_heun(
 
     ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
 
-    def central_diff(fn, t, eps=1e-4):
-        tp = torch.clamp(t + eps, min=float(t_min_), max=float(t_max_))
-        tm = torch.clamp(t - eps, min=float(t_min_), max=float(t_max_))
-        if torch.allclose(tp, tm):
-            tp = torch.clamp(t + 2*eps, min=float(t_min_), max=float(t_max_))
-            tm = t
-        return (fn(tp) - fn(tm)) / (tp - tm)
-
     z = latents.to(dtype64)
 
     for i in range(num_steps):
@@ -305,8 +296,7 @@ def vel_sde_sampler_heun(
         # Schedules and required derivatives at t
         alpha_t = net.alpha(t).to(dtype64)
         sigma_t = net.sigma(t).to(dtype64)
-        alpha_p = (net.d_alpha(t).to(dtype64)
-                   if hasattr(net, 'd_alpha') else central_diff(net.alpha, t).to(dtype64))
+        alpha_p = net.d_alpha(t).to(dtype64)
         if hasattr(net, 'd_lambda'):
             lambda_p = net.d_lambda(t).to(dtype64)
         else:
@@ -337,8 +327,7 @@ def vel_sde_sampler_heun(
             # Schedules and required derivatives at s
             alpha_s = net.alpha(s).to(dtype64)
             sigma_s = net.sigma(s).to(dtype64)
-            alpha_p_s = (net.d_alpha(s).to(dtype64)
-                         if hasattr(net, 'd_alpha') else central_diff(net.alpha, s).to(dtype64))
+            alpha_p_s = net.d_alpha(s).to(dtype64)
             if hasattr(net, 'd_lambda'):
                 lambda_p_s = net.d_lambda(s).to(dtype64)
             else:
@@ -364,20 +353,7 @@ def vel_sde_sampler_heun(
             g_bar_avg = 0.5 * (g_bar + g_bar_s)
 
             z = z + h * f_bar_avg + g_bar_avg * torch.sqrt(torch.abs(h)) * noise
-
-    return z.to(torch.float32)
-
-def vel_sde_sampler_2(
-    net,
-    latents,
-    class_labels=None,
-    randn_like=torch.randn_like,
-    num_steps=18,
-    t_min=None,
-    t_max=None,
-    eta: float = 1.0,
-):
-    
+            # z = z + h * f_bar_avg
 
     return z.to(torch.float32)
     
@@ -653,10 +629,9 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
-            eta = sampler_kwargs.pop('eta', 1.0)
             ct_allowed = {'num_steps', 't_min', 't_max'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, eta=eta, **ct_kwargs)
+            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
