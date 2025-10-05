@@ -29,6 +29,7 @@ def eta_discrete(u, alpha_s, alpha_t, sigma_s, sigma_t):
     gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
 
     numerator = gamma_s - 1
+    assert u**2 + 1 - gamma_s >= 0, "negative number squared"
     denominator = torch.sqrt(gamma_s * u**2) - torch.sqrt(u**2 + 1 - gamma_s)
     return numerator / denominator
 
@@ -277,6 +278,7 @@ def vel_sde_sampler_heun(
     the user to globally scale it with the `eta` argument (eta=0 turns off noise and
     removes the η_t^2 contribution from the drift as well).
     """
+    print(f"num steps: {num_steps}")
     device = latents.device
     dtype64 = torch.float64
 
@@ -357,6 +359,52 @@ def vel_sde_sampler_heun(
 
     return z.to(torch.float32)
     
+def discrete_sampler(
+    net,
+    latents,
+    class_labels=None,
+    randn_like=torch.randn_like,
+    num_steps=100,
+    t_min=None,
+    t_max=None,
+):
+    device = latents.device
+    dtype64 = torch.float64
+
+    t_min_ = net.t_min.to(device=device, dtype=dtype64) if t_min is None else torch.as_tensor(t_min, device=device, dtype=dtype64)
+    t_max_ = net.t_max.to(device=device, dtype=dtype64) if t_max is None else torch.as_tensor(t_max, device=device, dtype=dtype64)
+
+    ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
+
+    z = latents.to(dtype64)
+    print(f"num steps: {num_steps}")
+    for i in tqdm.trange(num_steps, desc="Sampling"):
+        t = ts[i].unsqueeze(0)
+        s = ts[i + 1].unsqueeze(0)
+
+        alpha_t = net.alpha(t)
+        sigma_t = net.sigma(t)
+        alpha_s = net.alpha(s)
+        sigma_s = net.sigma(s)
+
+        u_s = net.u(s) * 3
+        u_t = net.u(t)
+
+
+        eps_scaled = net(z, t, class_labels)
+        eps_pred = z - eps_scaled / u_t.reshape(-1, 1, 1, 1)
+
+        if i < num_steps:
+            eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+            coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
+            coeff_z = alpha_s / alpha_t
+
+            eps = torch.randn_like(z) if i < num_steps - 1 else 0
+            z = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
+        else:
+            z = alpha_s / alpha_t * z + (sigma_s - alpha_s * sigma_t / alpha_t) * eps_pred
+
+    return z
 
 def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
@@ -631,7 +679,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
             ct_allowed = {'num_steps', 't_min', 't_max'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
