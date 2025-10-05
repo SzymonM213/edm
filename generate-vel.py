@@ -278,7 +278,6 @@ def vel_sde_sampler_heun(
     the user to globally scale it with the `eta` argument (eta=0 turns off noise and
     removes the η_t^2 contribution from the drift as well).
     """
-    print(f"num steps: {num_steps}")
     device = latents.device
     dtype64 = torch.float64
 
@@ -377,8 +376,7 @@ def discrete_sampler(
     ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
 
     z = latents.to(dtype64)
-    print(f"num steps: {num_steps}")
-    for i in tqdm.trange(num_steps, desc="Sampling"):
+    for i in range(num_steps):
         t = ts[i].unsqueeze(0)
         s = ts[i + 1].unsqueeze(0)
 
