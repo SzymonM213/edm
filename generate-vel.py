@@ -210,6 +210,9 @@ def vel_sde_sampler(
 
     z = latents.to(dtype64)
 
+    c = max((-net.d_lambda(t))**(1/2) / net.u(t) for t in ts[:-1])
+    print(f"Scaling factor for u(t): {c}")
+
     for i in range(num_steps):
         t = ts[i].unsqueeze(0)
         s = ts[i + 1].unsqueeze(0)
@@ -235,7 +238,7 @@ def vel_sde_sampler(
         # η_t schedule from the model if available; otherwise default to 1.0.
         # Heuristic when only u(t) and λ'_t are present.
         # u_now = u_t.reshape(-1)  # already dtype64
-        u_t *= 13
+        u_t *= c
         assert u_t**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
