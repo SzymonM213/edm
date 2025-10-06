@@ -178,7 +178,6 @@ def vel_sde_sampler(
     num_steps=18,
     t_min=None,
     t_max=None,
-    eta: float = 1.0,  # Global multiplier for stochasticity. 0 => ODE, 1 => as-scheduled noise.
 ):
     """
     Euler–Maruyama integrator for the SDE:
@@ -236,7 +235,7 @@ def vel_sde_sampler(
         # η_t schedule from the model if available; otherwise default to 1.0.
         # Heuristic when only u(t) and λ'_t are present.
         # u_now = u_t.reshape(-1)  # already dtype64
-        u_t *= 25
+        u_t *= 13
         assert u_t**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
@@ -398,10 +397,11 @@ def discrete_sampler(
 
         if i < num_steps:
             eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+            # eta_s = torch.tensor(0).to(device)
             coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
             coeff_z = alpha_s / alpha_t
 
-            eps = torch.randn_like(z) if i < num_steps - 1 else 0
+            eps = randn_like(z) if i < num_steps - 1 else 0
             z = coeff_eps.reshape(-1,1,1,1) * eps_pred + coeff_z.reshape(-1,1,1,1) * z + sigma_s.reshape(-1,1,1,1) * eta_s.reshape(-1,1,1,1) * eps
         else:
             z = alpha_s / alpha_t * z + (sigma_s - alpha_s * sigma_t / alpha_t) * eps_pred
@@ -682,7 +682,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
             ct_allowed = {'num_steps', 't_min', 't_max'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
             # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
