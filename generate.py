@@ -24,6 +24,12 @@ def eta_constant(t):
     return torch.zeros_like(t)
 
 @torch.no_grad()
+def eta_optimal(u, alpha_s, alpha_t, sigma_s, sigma_t):
+    
+    gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
+    return torch.sqrt(1-1/gamma_s)
+    
+@torch.no_grad()
 def eta_discrete(u, alpha_s, alpha_t, sigma_s, sigma_t):
     gamma_s = (alpha_s**2 / sigma_s**2) * (sigma_t**2 / alpha_t**2)
 
