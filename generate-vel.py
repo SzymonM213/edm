@@ -243,7 +243,8 @@ def vel_sde_sampler(
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
         # print(f"eta_t_sched: {eta_t_sched}")
 
-        eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+        # eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+        eta_eff = torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
 
         # Drift according to the provided SDE.
         a_ratio = (alpha_p / alpha_t).reshape(-1, 1, 1, 1)
