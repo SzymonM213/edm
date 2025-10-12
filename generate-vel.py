@@ -178,6 +178,7 @@ def vel_sde_sampler(
     num_steps=18,
     t_min=None,
     t_max=None,
+    eta='zero'
 ):
     """
     Euler–Maruyama integrator for the SDE:
@@ -242,9 +243,7 @@ def vel_sde_sampler(
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
         # print(f"eta_t_sched: {eta_t_sched}")
-
-        # eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
-        eta_eff = torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
+        eta_eff = eta_t_sched.reshape(-1, 1, 1, 1) if eta == 'pokar' else torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
 
         # Drift according to the provided SDE.
         a_ratio = (alpha_p / alpha_t).reshape(-1, 1, 1, 1)
@@ -618,12 +617,13 @@ def parse_int_list(s):
 @click.option('--S_min', 'S_min',          help='Stoch. min noise level', metavar='FLOAT',                          type=click.FloatRange(min=0), default=0, show_default=True)
 @click.option('--S_max', 'S_max',          help='Stoch. max noise level', metavar='FLOAT',                          type=click.FloatRange(min=0), default='inf', show_default=True)
 @click.option('--S_noise', 'S_noise',      help='Stoch. noise inflation', metavar='FLOAT',                          type=float, default=1, show_default=True)
-@click.option('--eta', 'eta',              help='Stochasticity for continuous-time sampling (0=ODE, >0=SDE)',       type=click.FloatRange(min=0), default=0.0, show_default=True)
+# @click.option('--eta', 'eta',              help='Stochasticity for continuous-time sampling (0=ODE, >0=SDE)',       type=click.FloatRange(min=0), default=0.0, show_default=True)
 
 @click.option('--solver',                  help='Ablate ODE solver', metavar='euler|heun|taylor',                          type=click.Choice(['euler', 'heun', 'taylor']))
 @click.option('--disc', 'discretization',  help='Ablate time step discretization {t_i}', metavar='vp|ve|iddpm|edm', type=click.Choice(['vp', 've', 'iddpm', 'edm']))
 @click.option('--schedule',                help='Ablate noise schedule sigma(t)', metavar='vp|ve|linear',           type=click.Choice(['vp', 've', 'linear']))
 @click.option('--scaling',                 help='Ablate signal scaling s(t)', metavar='vp|none',                    type=click.Choice(['vp', 'none']))
+@click.option('--eta',                     help='Noise scale for sampling', metavar='zero|pokar|optimal',           type=click.Choice(['zero', 'pokar', 'optimal']))
 
 def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=torch.device('cuda'), **sampler_kwargs):
     """Generate random images using the techniques described in the paper
@@ -682,7 +682,7 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         sampler_kwargs = {key: value for key, value in sampler_kwargs.items() if value is not None}
         have_ablation_kwargs = any(x in sampler_kwargs for x in ['solver', 'discretization', 'schedule', 'scaling'])
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
-            ct_allowed = {'num_steps', 't_min', 't_max'}
+            ct_allowed = {'num_steps', 't_min', 't_max', 'eta'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
             # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
             # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
