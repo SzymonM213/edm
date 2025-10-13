@@ -211,7 +211,7 @@ def vel_sde_sampler(
 
     z = latents.to(dtype64)
 
-    c = max((-net.d_lambda(t))**(1/2) / net.u(t) for t in ts[:-1])
+    c = max((-net.d_lambda(t))**(1/2) / net.u(t) for t in ts[:-1]) + 1e-5
 
     for i in range(num_steps):
         t = ts[i].unsqueeze(0)
