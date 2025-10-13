@@ -243,8 +243,13 @@ def vel_sde_sampler(
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
         # print(f"eta_t_sched: {eta_t_sched}")
-        eta_eff = eta_t_sched.reshape(-1, 1, 1, 1) if eta == 'pokar' else torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
-
+        if eta == 'zero':
+            eta_eff = torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
+        elif eta == 'pokar':
+            eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+        else:
+            assert eta == 'optimal'
+            eta_eff = torch.sqrt(-net.d_lambda(t)).reshape(-1, 1, 1, 1)
         # Drift according to the provided SDE.
         a_ratio = (alpha_p / alpha_t).reshape(-1, 1, 1, 1)
         drift_coeff_eps = (sigma_t * (eta_eff.reshape(-1) ** 2 - lambda_p) / 2).reshape(-1, 1, 1, 1)
