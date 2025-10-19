@@ -272,6 +272,7 @@ def vel_sde_sampler_heun(
     num_steps=100,
     t_min=None,
     t_max=None,
+    eta='pokar'
 ):
     """
     Heun (predictor-corrector) integrator for the SDE:
@@ -293,6 +294,8 @@ def vel_sde_sampler_heun(
 
     ts = torch.linspace(t_max_, t_min_, steps=num_steps + 1, device=device, dtype=dtype64)
 
+    c = max((-net.d_lambda(t))**(1/2) / net.u(t) for t in ts[:-1]) + 1e-5
+
     z = latents.to(dtype64)
 
     for i in range(num_steps):
@@ -313,7 +316,7 @@ def vel_sde_sampler_heun(
         u_t = net.u(t).to(dtype64).reshape(-1, 1, 1, 1)
         eps_hat = z - out / u_t
 
-        u_t_eff = u_t * 12
+        u_t_eff = u_t * c
         assert u_t_eff**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t_eff - torch.sqrt(torch.clamp(u_t_eff**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
@@ -344,7 +347,7 @@ def vel_sde_sampler_heun(
             u_s = net.u(s).to(dtype64).reshape(-1, 1, 1, 1)
             eps_hat_s = z_euler - out_s / u_s
 
-            u_s_eff = u_s * 12
+            u_s_eff = u_s * c
             assert u_s_eff**2 + lambda_p_s.reshape(-1) >= 0, "u(s)^2 + λ'(s) must be non-negative to derive η_s"
             eta_s_sched = u_s_eff - torch.sqrt(torch.clamp(u_s_eff**2 + lambda_p_s.reshape(-1), min=0))
             eta_s_sched = eta_s_sched.reshape(-1, 1, 1, 1)
@@ -372,6 +375,7 @@ def discrete_sampler(
     num_steps=100,
     t_min=None,
     t_max=None,
+    eta='pokar'
 ):
     device = latents.device
     dtype64 = torch.float64
@@ -403,7 +407,13 @@ def discrete_sampler(
         eps_pred = z - eps_scaled / u_t.reshape(-1, 1, 1, 1)
 
         if i < num_steps:
-            eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+            if eta == 'zero':
+                eta_s = torch.zeros_like(u_s).to(device)
+            elif eta == 'pokar':
+                eta_s = eta_discrete(u_s, alpha_t, alpha_s, sigma_s, sigma_t)
+            else:
+                assert eta == 'optimal'
+                eta_s = torch.sqrt(-net.d_lambda(t)).reshape(-1, 1, 1, 1)
             # eta_s = torch.tensor(0).to(device)
             coeff_eps = sigma_s * torch.sqrt(1 - eta_s**2) - alpha_s * (sigma_t / alpha_t)
             coeff_z = alpha_s / alpha_t
@@ -690,8 +700,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
             ct_allowed = {'num_steps', 't_min', 't_max', 'eta'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
             # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
