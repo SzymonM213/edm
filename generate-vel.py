@@ -319,7 +319,14 @@ def vel_sde_sampler_heun(
         assert u_t_eff**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t_eff - torch.sqrt(torch.clamp(u_t_eff**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
-        eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+
+        if eta == 'zero':
+            eta_eff = torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
+        elif eta == 'pokar':
+            eta_eff = eta_t_sched.reshape(-1, 1, 1, 1)
+        else:
+            assert eta == 'optimal'
+            eta_eff = torch.sqrt(-net.d_lambda(t)).reshape(-1, 1, 1, 1)
 
         a_ratio = (alpha_p / alpha_t).reshape(-1, 1, 1, 1)
         drift_coeff_eps = (sigma_t * (eta_eff.reshape(-1) ** 2 - lambda_p) / 2).reshape(-1, 1, 1, 1)
@@ -698,8 +705,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
             ct_allowed = {'num_steps', 't_min', 't_max', 'eta'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-            # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
             # images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
