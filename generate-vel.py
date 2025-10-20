@@ -284,6 +284,8 @@ def vel_sde_sampler_heun(
     the user to globally scale it with the `eta` argument (eta=0 turns off noise and
     removes the η_t^2 contribution from the drift as well).
     """
+    print("generating")
+
     device = latents.device
     dtype64 = torch.float64
 
