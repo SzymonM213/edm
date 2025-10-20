@@ -707,9 +707,9 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
             ct_allowed = {'num_steps', 't_min', 't_max', 'eta'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
             # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            # images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
