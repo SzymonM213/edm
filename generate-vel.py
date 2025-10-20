@@ -30,7 +30,7 @@ def eta_discrete(u, alpha_s, alpha_t, sigma_s, sigma_t):
 
     numerator = gamma_s - 1
     assert u**2 + 1 - gamma_s >= 0, "negative number squared"
-    denominator = torch.sqrt(gamma_s * u**2) - torch.sqrt(u**2 + 1 - gamma_s)
+    denominator = torch.sqrt(gamma_s * u**2) + torch.sqrt(u**2 + 1 - gamma_s)
     return numerator / denominator
 
 @torch.no_grad()
@@ -242,7 +242,6 @@ def vel_sde_sampler(
         assert u_t**2 + lambda_p.reshape(-1) >= 0, "u(t)^2 + λ'(t) must be non-negative to derive η_t"
         eta_t_sched = u_t - torch.sqrt(torch.clamp(u_t**2 + lambda_p.reshape(-1), min=0))
         eta_t_sched = eta_t_sched.reshape(-1, 1, 1, 1)
-        # print(f"eta_t_sched: {eta_t_sched}")
         if eta == 'zero':
             eta_eff = torch.zeros_like(eta_t_sched).reshape(-1, 1, 1, 1)
         elif eta == 'pokar':
