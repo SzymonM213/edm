@@ -374,6 +374,114 @@ def vel_sde_sampler_heun(
             # z = z + h * f_bar_avg
 
     return z.to(torch.float32)
+
+@torch.no_grad()
+def sde_dpm_solver_2m(
+    net,
+    latents,
+    class_labels=None,
+    randn_like=torch.randn_like,
+    num_steps=18,
+    t_min=None,
+    t_max=None,
+):
+    """
+    Second-order multistep SDE-DPM-Solver-2M
+    x_t = (α_t/α_s) x_s − 2 σ_t (e^{h} − 1) ε_s + σ_t (e^{h} − 1) (ε_r − ε_s)/(λ_r − λ_s) + σ_t sqrt(e^{2h} − 1) z_s
+    """
+
+    device = latents.device
+    dtype64 = torch.float64
+
+    t_min = net.t_min.to(device=device, dtype=dtype64) if t_min is None else torch.as_tensor(t_min, device=device, dtype=dtype64)
+    t_max = net.t_max.to(device=device, dtype=dtype64) if t_max is None else torch.as_tensor(t_max, device=device, dtype=dtype64)
+    
+    ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device, dtype=dtype64)
+
+    # Precompute lambda (log SNR) values for all time steps
+    def log_snr(t):
+        alpha_t = net.alpha(t).to(dtype64)
+        sigma_t = net.sigma(t).to(dtype64)
+        return torch.log((alpha_t / sigma_t) ** 2)
+
+    x_s = latents.to(dtype64)
+
+    x_r = None 
+    eps_xr = None
+
+
+    for i in range(num_steps):
+        t = ts[i + 1].unsqueeze(0)
+        s = ts[i].unsqueeze(0)
+
+        alpha_s = net.alpha(s).to(dtype64)
+        alpha_t = net.alpha(t).to(dtype64)
+        sigma_s = net.sigma(s).to(dtype64)
+        sigma_t = net.sigma(t).to(dtype64)
+
+        lambda_s = log_snr(s)
+        lambda_t = log_snr(t)
+        h = lambda_t - lambda_s
+
+        # Noise prediction at current state
+        # eps_s = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+
+        # For the first step - SDE-DPM-Solver-1 to get x_r
+        # x_t = (α_t/α_s) x_s - 2*σ_t*(e^{h}-1)*eps(x_s, s) + σ_t*sqrt(e^{2h}-1)*z
+        if x_r is None:
+            # eps_xs = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+            out = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+            u_s = net.u(s).to(dtype64).reshape(-1, 1, 1, 1)
+            eps_xs = x_s - out / u_s
+
+
+            e_h = torch.exp(h)
+            e_2h = torch.exp(2 * h)
+            coef_lin = (alpha_t / alpha_s)
+            coef_eps = sigma_t * (e_h - 1) * -2.0
+            coef_noise = sigma_t * torch.sqrt(torch.clamp(e_2h - 1.0, min=0.0))
+
+            z = randn_like(x_s)
+            x_next = coef_lin * x_s + coef_eps * eps_xs + coef_noise * z
+
+            x_r = x_s.detach()
+            eps_xr = eps_xs.detach()
+            x_s = x_next.detach()
+            continue
+
+        # eps_xs = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+        out = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+        u_s = net.u(s).to(dtype64).reshape(-1, 1, 1, 1)
+        eps_xs = x_s - out / u_s
+
+        r_idx = i - 1
+        r = ts[r_idx].unsqueeze(0)
+        lambda_r = log_snr(r)
+
+        # eps_xr = net(x_r.to(torch.float32), r.to(torch.float32), class_labels).to(dtype64)
+        out = net(x_r.to(torch.float32), r.to(torch.float32), class_labels).to(dtype64)
+        u_r = net.u(r).to(dtype64).reshape(-1, 1, 1, 1)
+        eps_xr = x_r - out / u_r
+
+        # avoiding division by zero
+        tiny = 1e-30
+
+        r1 = (lambda_t - lambda_s) / (h + tiny)
+        e_h = torch.exp(h)
+        e_2h = torch.exp(2 * h)
+        coef_lin = (alpha_t / alpha_s)
+        coef_eps = sigma_t * (e_h - 1) * -2.0
+        coef_corr = -sigma_t * (e_h - 1) / (r1 + tiny)
+        coef_noise = sigma_t * torch.sqrt(torch.clamp(e_2h - 1.0, min=0.0))
+
+        z = randn_like(x_s)
+
+        x_next = (coef_lin * x_s + coef_eps * eps_xs + coef_corr * (eps_xr - eps_xs) + coef_noise * z)
+
+        x_r = x_s.detach()
+        x_s = x_next.detach()
+
+    return x_s.to(torch.float32)
     
 def discrete_sampler(
     net,
@@ -707,9 +815,10 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
         if all(hasattr(net, attr) for attr in ('alpha', 'sigma', 'u')):
             ct_allowed = {'num_steps', 't_min', 't_max', 'eta'}
             ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
-            # images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            images = vel_sde_sampler_heun(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
             # images = discrete_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = vel_sde_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
+            # images = sde_dpm_solver_2m(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
 
             # # Use uvel_heun from ER_SDE_Solver
             # num_steps = sampler_kwargs.get('num_steps', 18)
