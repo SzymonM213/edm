@@ -293,6 +293,13 @@ def sde_dpm_solver_2m(
         sigma_t = net.sigma(t).to(dtype64)
         return torch.log((alpha_t / sigma_t) ** 2)
 
+    def get_prediction(x, t, class_labels):
+        # net predicts x - eps, we want eps
+        out = net(x.to(torch.float32), t.to(torch.float32), class_labels).to(dtype64)
+        u_t = net.u(t).to(dtype64).reshape(-1, 1, 1, 1)
+        return x - out / u_t
+
+
     x_s = latents.to(dtype64)
 
     x_r = None 
@@ -312,13 +319,10 @@ def sde_dpm_solver_2m(
         lambda_t = log_snr(t)
         h = lambda_t - lambda_s
 
-        # Noise prediction at current state
-        eps_s = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
-
         # For the first step - SDE-DPM-Solver-1 to get x_r
         # x_t = (α_t/α_s) x_s - 2*σ_t*(e^{h}-1)*eps(x_s, s) + σ_t*sqrt(e^{2h}-1)*z
         if x_r is None:
-            eps_xs = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+            eps_xs = get_prediction(x_s, s, class_labels)
             e_h = torch.exp(h)
             e_2h = torch.exp(2 * h)
             coef_lin = (alpha_t / alpha_s)
@@ -333,13 +337,13 @@ def sde_dpm_solver_2m(
             x_s = x_next.detach()
             continue
 
-        eps_xs = net(x_s.to(torch.float32), s.to(torch.float32), class_labels).to(dtype64)
+        eps_xs = get_prediction(x_s, s, class_labels)
 
         r_idx = i - 1
         r = ts[r_idx].unsqueeze(0)
         lambda_r = log_snr(r)
 
-        eps_xr = net(x_r.to(torch.float32), r.to(torch.float32), class_labels).to(dtype64)
+        eps_xr = get_prediction(x_r, r, class_labels)
 
         # avoiding division by zero
         tiny = 1e-30
@@ -642,7 +646,8 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
             #     ct_allowed = {'num_steps', 't_min', 't_max', 'method'}
             #     ct_kwargs = {k: v for k, v in sampler_kwargs.items() if k in ct_allowed}
             #     images = vel_ode_sampler(net, latents, class_labels, randn_like=rnd.randn_like, **ct_kwargs)
-            images = our_sampler(net, latents, class_labels, randn_like=rnd.randn_like, num_steps=18)
+            # images = our_sampler(net, latents, class_labels, randn_like=rnd.randn_like, num_steps=18)
+            images = sde_dpm_solver_2m(net, latents, class_labels, randn_like=rnd.randn_like, num_steps=18)
         else:
             sampler_fn = ablation_sampler if have_ablation_kwargs else edm_sampler
             images = sampler_fn(net, latents, class_labels, randn_like=rnd.randn_like, **sampler_kwargs)
