@@ -348,7 +348,7 @@ def sde_dpm_solver_2m(
         # avoiding division by zero
         tiny = 1e-30
 
-        r1 = (lambda_t - lambda_s) / (h + tiny)
+        r1 = (lambda_r - lambda_s) / (h + tiny)
         e_h = torch.exp(h)
         e_2h = torch.exp(2 * h)
         coef_lin = (alpha_t / alpha_s)
