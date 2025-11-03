@@ -1,3 +1,19 @@
+## Singularity Container
+To build the Singularity container, use the following command:
+```bash
+singularity pull edm.sif docker://nvcr.io/nvidia/pytorch:22.10-py3
+```
+
+Then, after copying the container to the "Rysy" cluster, you can run our model training using commands:
+```bash
+sbatch train_velocity.slurm
+```
+
+and execute sampling using:
+```bash
+sbatch -export=model_path=<path_to_model>,outdir=<output_directory> generate_images.slurm
+```
+
 ## Elucidating the Design Space of Diffusion-Based Generative Models (EDM)<br><sub>Official PyTorch implementation of the NeurIPS 2022 paper</sub>
 
 ![Teaser image](./docs/teaser-1920x640.jpg)
