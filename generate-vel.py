@@ -6,7 +6,8 @@
 # work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
 
 """Generate random images using the techniques described in the paper
-"Elucidating the Design Space of Diffusion-Based Generative Models"."""
+"Elucidating the Design Space of Diffusion-Based Generative Models"
+with changes proposed in our work"""
 
 import os
 import re
