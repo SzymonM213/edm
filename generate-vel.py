@@ -18,7 +18,6 @@ import numpy as np
 import torch
 import PIL.Image
 import dnnlib
-from er_sde_solver import ER_SDE_Solver
 from torch_utils import distributed as dist
 
 @torch.no_grad()
@@ -111,7 +110,7 @@ def vel_sde_sampler(
 
     ts = torch.linspace(t_max, t_min, steps=num_steps + 1, device=device, dtype=dtype64)
 
-    z = latents.to(dtype64)
+    z = latents.to(dtype64) * ts[0]
 
     c = max((-net.d_lambda(t))**(1/2) / net.u(t) for t in ts[:-1]) + 1e-5
 
@@ -560,7 +559,6 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
     # Loop over batches.
     dist.print0(f'Generating {len(seeds)} images to "{outdir}"...')
-    solver = ER_SDE_Solver(sde_type='ve', model_prediction_type='x_start')
     for batch_seeds in tqdm.tqdm(rank_batches, unit='batch', disable=(dist.get_rank() != 0)):
         torch.distributed.barrier()
         batch_size = len(batch_seeds)
